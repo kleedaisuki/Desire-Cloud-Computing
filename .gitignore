@@ -30,3 +30,9 @@
 *.exe
 *.out
 *.app
+
+# Directory for Test Files
+test-dir
+
+# IDE Configuration
+.vscode
