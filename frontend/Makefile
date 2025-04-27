@@ -7,8 +7,8 @@ else
 optimization = -O3
 endif
 
-source_code = main.cpp write-log.cpp compile-thread.cpp global-constant.cpp tackle-client.cpp
-executable = cpl-back
+source_code = main.cpp write-log.cpp global-constant.cpp
+executable = cpl-front
 
 all : $(executable)
 ifeq ($(DEBUG), true)

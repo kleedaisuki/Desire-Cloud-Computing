@@ -36,3 +36,6 @@ test-dir
 
 # IDE Configuration
 .vscode
+
+# Build
+make.sh

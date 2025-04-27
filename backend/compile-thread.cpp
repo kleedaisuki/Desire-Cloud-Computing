@@ -1,24 +1,10 @@
 #define _COMPILE_THREAD_CPP
 #include "cloud-compile-backend.hpp"
 
-ThreadStatCode compile_files_shell(void)
-{
-    return ThreadStatCode::SUCCESS;
-}
-
-ThreadStatCode compile_files(void *instruction_buffer)
+ThreadStatCode compile_files(void *instruction_list)
 {
     using namespace filesystem;
-    stringstream instruction_stream;
-    instruction_stream << static_cast<char *>(instruction_buffer);
-
-    list<string> instruction;
-    while (!instruction_stream.eof())
-    {
-        string tmp;
-        instruction_stream >> tmp;
-        instruction.push_back(move(tmp));
-    }
+    list<string> &instruction = *static_cast<list<string> *>(instruction_list);
 
     int stderr_pipe[2];
     if (pipe(stderr_pipe) < 0)
@@ -76,5 +62,26 @@ ThreadStatCode compile_files(void *instruction_buffer)
         return ThreadStatCode ::SUCCESS;
     }
     else
+    {
+        log_write_error_information("failed to fork...\ncompilation terminated.");
         return ThreadStatCode ::FORK_FAILED;
+    }
+}
+
+ThreadStatCode start_compile(void *string_stream)
+{
+    stringstream *stream = static_cast<stringstream *>(string_stream);
+    string filename;
+    char buffer[FILENAME_BUFFER_SIZE];
+
+    list<string> instructions;
+
+    do
+    {
+        *stream >> filename;
+        sprintf(buffer, "src/%s", filename.c_str());
+        instructions.emplace_back(buffer);
+    } while (!stream->eof());
+
+    return compile_files(&instructions);
 }

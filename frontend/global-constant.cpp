@@ -1,9 +1,5 @@
 #define _GLOBAL_CONSTANT_CPP
-#include "cloud-compile-backend.hpp"
-
-ThreadPool global_thread_pool(GLOBAL_THREAD_LIMITATION);
-
-unordered_map<string, function<ThreadStatCode(void *)>> main_thread_process;
+#include "cloud-compile-frontend.hpp"
 
 mutex log_mutex;
 fstream log_file;
@@ -13,7 +9,6 @@ bool main_thread_stop_flag = false;
 void initialize(void) throws(runtime_error)
 {
     using namespace filesystem;
-    initialize_main_thread_functions();
 
     if (!exists("cpl-log"))
         create_directory("cpl-log");
@@ -30,16 +25,7 @@ void initialize(void) throws(runtime_error)
 
 void finalize(void) throws(runtime_error)
 {
-    global_thread_pool.stop_threads();
     log_write_regular_information("Exit Successfully\n");
     unique_lock<mutex> guard(log_mutex);
     close_log_file();
-}
-
-void initialize_main_thread_functions(void)
-{
-    main_thread_process.insert(make_pair("receive", receive_file));
-    main_thread_process.insert(make_pair("compile", start_compile));
-    main_thread_process.insert(make_pair("receive-compile", receive_than_compile));
-    main_thread_process.insert(make_pair("clear-logs", receive_file));
 }

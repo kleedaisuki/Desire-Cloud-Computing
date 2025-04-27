@@ -1,5 +1,7 @@
 #define _MAIN_CPP
-#include "cloud-compile-backend.hpp"
+#include "cloud-compile-frontend.hpp"
+
+char eof_flag[] = {EOF};
 
 int main(int argc, char *argv[])
 {
@@ -15,13 +17,8 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    ServerSocket server(DEFAULT_PORT);
-    while (!main_thread_stop_flag)
-    {
-        auto client = server.accept();
-        if (client)
-            global_thread_pool.enqueue(priority_level::NORMAL, tackle_client, client);
-    }
+    Socket client(SERVER_IP, DEFAULT_PORT);
+    client.send("Hello World!");
 
     try
     {
