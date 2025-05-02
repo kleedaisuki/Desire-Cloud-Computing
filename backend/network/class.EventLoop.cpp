@@ -1,4 +1,4 @@
-#define _CHANNEL_CPP
+#define _CLASS_EVENTLOOP_CPP
 #include "network.hpp"
 using namespace net;
 
@@ -129,7 +129,6 @@ void EventLoop::update_channel(Channel *channel)
     }
     else
     {
-        assert(!channel->is_none_event());
         channels_[fd] = channel;
         if (::epoll_ctl(epoll_fd_.fd(), EPOLL_CTL_ADD, fd, &ev) == -1)
         {
@@ -164,7 +163,7 @@ bool EventLoop::has_channel(Channel *channel)
     assert(channel->owner_loop() == this);
     assert_in_loop_thread();
     auto it = channels_.find(channel->fd());
-    return it != channels_.end() && it->second == channel;
+    return it != channels_.end() and it->second == channel;
 }
 
 void EventLoop::handle_read()

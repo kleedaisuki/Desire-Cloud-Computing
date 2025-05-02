@@ -9,6 +9,15 @@ enum class ThreadStatCode
     REDIRECT_FAILED,
     FORK_FAILED,
     CLIENT_COMMAND_ERROR,
+    INVALID_ARGUMENT,
+    PROCESS_SIGNALED,
+    COMPILE_FAILED,
+    WAITPID_FAILED,
+    ALLOCATION_FAILED,
+    STREAM_READ_ERROR,
+    EXEC_FAILED,
+    EXECUTION_FAILED,
+    UNKNOWN_ERROR,
 };
 
 #define FILENAME_BUFFER_SIZE 260
@@ -24,5 +33,8 @@ enum class ThreadStatCode
 #define SERVER_IP "127.0.0.1"
 
 #define throws(error_name)
+
+#define LOG_DIRECTORY "cpl-log"
+#define OUT_DIRECTORY "out"
 
 #endif

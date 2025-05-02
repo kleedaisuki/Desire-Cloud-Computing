@@ -1,4 +1,4 @@
-#define _CHANNEL_CPP
+#define _CLASS_ACCEPTER_CPP
 #include "network.hpp"
 using namespace net;
 
@@ -74,9 +74,9 @@ void Acceptor::handle_read()
         else
         {
             int saved_errno = errno;
-            if (saved_errno == EAGAIN || saved_errno == EWOULDBLOCK)
+            if (saved_errno == EAGAIN or saved_errno == EWOULDBLOCK)
                 break;
-            else if (saved_errno == EMFILE || saved_errno == ENFILE)
+            else if (saved_errno == EMFILE or saved_errno == ENFILE)
             {
                 ::close(idle_fd_);
                 idle_fd_ = ::accept(accept_socket_.fd(), nullptr, nullptr);
@@ -85,7 +85,7 @@ void Acceptor::handle_read()
                 log_write_error_information("Acceptor::handle_read - Reached fd limit (EMFILE/ENFILE), closed one incoming connection.");
                 break;
             }
-            else if (saved_errno == ECONNABORTED || saved_errno == EINTR || saved_errno == EPROTO)
+            else if (saved_errno == ECONNABORTED or saved_errno == EINTR or saved_errno == EPROTO)
                 log_write_warning_information("Acceptor::handle_read - Ignorable accept error: " + errno_to_string(saved_errno));
             else
             {

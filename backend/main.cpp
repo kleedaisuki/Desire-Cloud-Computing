@@ -4,24 +4,7 @@ using namespace net;
 
 int main(int argc, char *argv[])
 {
-    initialize();
-    if (argc != 2)
-    {
-        log_write_error_information("Usage: " + string(argv[0]) + " <port>");
-        return EXIT_FAILURE;
-    }
-    uint16_t port = 0;
-    try
-    {
-        port = static_cast<uint16_t>(stoi(argv[1]));
-        if (port == 0)
-            throw invalid_argument("Port cannot be 0");
-    }
-    catch (const exception &e)
-    {
-        log_write_error_information("Invalid port number '" + string(argv[1]) + "': " + e.what());
-        return EXIT_FAILURE;
-    }
+    uint16_t port = DEFAULT_PORT;
 
     log_write_regular_information("Starting server on port " + to_string(port) + "...");
     log_write_regular_information("Global ThreadPool instance access confirmed.");
@@ -51,6 +34,11 @@ int main(int argc, char *argv[])
         buf->retrieve_all();
         return string{"Unknown tag\r\n"}; });
 
+    server.set_default_protocol_handler([](const TcpConnectionPtr &conn, const string &tag, std::string_view payload) -> string
+                                        {
+        log_write_warning_information("Handling Unknown tag for " + conn->name());
+        return string{"Unknown tag\r\n"}; });
+
     // Set connection callback (optional)
     server.set_connection_callback([](const TcpConnectionPtr &conn)
                                    {
@@ -69,6 +57,4 @@ int main(int argc, char *argv[])
     loop.loop();
 
     log_write_regular_information("Server exiting.");
-
-    finalize();
 }

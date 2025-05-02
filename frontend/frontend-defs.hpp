@@ -15,4 +15,8 @@
 
 #define throws(error_name)
 
+#define LOG_DIRECTORY "cpl-log"
+#define OUT_DIRECTORY "out"
+#define throws(error_name)
+
 #endif

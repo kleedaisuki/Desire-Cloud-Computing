@@ -1,4 +1,4 @@
-#define _CHANNEL_CPP
+#define _CLASS_BUFFER_CPP
 #include "network.hpp"
 using namespace net;
 

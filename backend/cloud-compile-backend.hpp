@@ -24,7 +24,4 @@ extern bool main_thread_stop_flag;
 void make_sure_log_file(void) throws(runtime_error);
 void close_log_file(void) throws(runtime_error);
 
-void initialize(void) throws(runtime_error);
-void finalize(void) throws(runtime_error);
-
 #endif

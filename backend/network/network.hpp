@@ -45,10 +45,7 @@ void log_write_regular_information(string &&info);
 void log_write_warning_information(const string &info);
 void log_write_warning_information(string &&info);
 
-inline std::string errno_to_string(int err_no)
-{
-    return std::string(strerror(err_no));
-}
+inline string errno_to_string(int err_no) { return string(strerror(err_no)); }
 
 namespace util
 {
@@ -57,22 +54,22 @@ namespace util
         int flags = ::fcntl(fd, F_GETFL, 0);
         if (flags == -1)
         {
-            log_write_error_information("fcntl(F_GETFL) failed for fd " + std::to_string(fd) + ": " + errno_to_string(errno));
+            log_write_error_information("fcntl(F_GETFL) failed for fd " + to_string(fd) + ": " + errno_to_string(errno));
             return -1;
         }
         if (::fcntl(fd, F_SETFL, flags | O_NONBLOCK) == -1)
         {
-            log_write_error_information("fcntl(F_SETFL, O_NONBLOCK) failed for fd " + std::to_string(fd) + ": " + errno_to_string(errno));
+            log_write_error_information("fcntl(F_SETFL, O_NONBLOCK) failed for fd " + to_string(fd) + ": " + errno_to_string(errno));
             return -1;
         }
         return 0;
     }
 
-    inline void fatal_perror(const std::string &msg)
+    inline void fatal_perror(const string &msg)
     {
-        std::string error_msg = msg + ": " + errno_to_string(errno);
+        string error_msg = msg + ": " + errno_to_string(errno);
         log_write_error_information("FATAL ERROR: " + error_msg);
-        std::exit(EXIT_FAILURE);
+        exit(EXIT_FAILURE);
     }
 }
 
@@ -81,7 +78,7 @@ class ThreadPool
 public:
     static ThreadPool &instance()
     {
-        extern ThreadPool global_thread_pool;
+        static ThreadPool global_thread_pool;
         return global_thread_pool;
     }
 
@@ -96,11 +93,13 @@ public:
             lock_guard lk{mtx_};
             stop_ = true;
         }
+
         cv_.notify_all();
-        for (auto &w : workers_)
+
+        for (thread &w : workers_)
             if (w.joinable())
                 w.join();
-        log_write_regular_information("ThreadPool destroyed.");
+        log_write_regular_information("thread pool closed");
     }
 
     template <typename F, typename... Args>
@@ -117,80 +116,30 @@ public:
         return enqueue_internal(priority, forward<F>(f), forward<Args>(args)...);
     }
 
-    explicit ThreadPool(size_t nthreads = thread::hardware_concurrency())
-        : stop_{false}, seq_{0}
+    explicit ThreadPool(size_t max_threads_param = thread::hardware_concurrency())
+        : max_threads_{max_threads_param == 0 ? 1 : max_threads_param},
+          stop_{false},
+          seq_{0},
+          idle_threads_{0}
     {
-        if (nthreads == 0)
-            nthreads = 1;
-        workers_.reserve(nthreads);
-        for (size_t i = 0; i < nthreads; ++i)
-            workers_.emplace_back([this]
-                                  { worker_thread(); });
+
+        log_write_regular_information("thread pool initialzed with maximum set:" + to_string(max_threads_));
+        workers_.reserve(max_threads_);
     }
 
 private:
-    template <typename F, typename... Args>
-    auto enqueue_internal(int priority, F &&f, Args &&...args)
-    {
-        using R = invoke_result_t<F, Args...>;
-        auto taskPtr = make_shared<packaged_task<R()>>(
-            bind(forward<F>(f), forward<Args>(args)...));
-
-        {
-            lock_guard lk{mtx_};
-            if (stop_)
-            {
-
-                log_write_error_information("Attempted to enqueue task on a stopped ThreadPool.");
-                return future<R>();
-            }
-            tasks_.emplace(TaskWrapper{priority, seq_++, [taskPtr]
-                                       { (*taskPtr)(); }});
-        }
-        cv_.notify_one();
-        return taskPtr->get_future();
-    }
-
-    void worker_thread()
-    {
-        log_write_regular_information("Worker thread started: " + to_string(hash<thread::id>{}(this_thread::get_id())));
-        while (true)
-        {
-            TaskWrapper task;
-            {
-                unique_lock lk{mtx_};
-                cv_.wait(lk, [this]
-                         { return stop_ || !tasks_.empty(); });
-                if (stop_ && tasks_.empty())
-                {
-                    log_write_regular_information("Worker thread stopping: " + to_string(hash<thread::id>{}(this_thread::get_id())));
-                    return;
-                }
-                task = move(const_cast<TaskWrapper &>(tasks_.top()));
-                tasks_.pop();
-            }
-            try
-            {
-                task.func();
-            }
-            catch (const exception &e)
-            {
-                log_write_error_information("ThreadPool task exception: " + string(e.what()));
-            }
-            catch (...)
-            {
-                log_write_error_information("ThreadPool task unknown exception.");
-            }
-        }
-    }
-
     using Task = function<void()>;
+
     struct TaskWrapper
     {
         int priority;
         size_t seq;
         Task func;
+
+        TaskWrapper() : priority(0), seq(0), func(nullptr) {}
+        TaskWrapper(int p, size_t s, Task f) : priority(p), seq(s), func(move(f)) {} // 使用移动语义接管 Task
     };
+
     struct Compare
     {
         bool operator()(const TaskWrapper &a, const TaskWrapper &b) const
@@ -201,12 +150,90 @@ private:
         }
     };
 
+    template <typename F, typename... Args>
+    auto enqueue_internal(int priority, F &&f, Args &&...args)
+    {
+        using R = invoke_result_t<F, Args...>;
+        auto taskPtr = make_shared<packaged_task<R()>>(
+            bind(forward<F>(f), forward<Args>(args)...));
+        future<R> future = taskPtr->get_future();
+
+        {
+            lock_guard lk{mtx_};
+
+            if (stop_)
+            {
+                log_write_error_information("task pushed to stopped thread pool");
+                return std::future<R>();
+            }
+
+            tasks_.emplace(TaskWrapper{priority, seq_++, [taskPtr]()
+                                       { (*taskPtr)(); }});
+            log_write_regular_information("task pushed, priority:" + to_string(priority) + ", sequence code:" + to_string(seq_.load() - 1));
+
+            if (idle_threads_ == 0 and workers_.size() < max_threads_)
+                workers_.emplace_back([this]
+                                      { worker_thread(); });
+        }
+
+        cv_.notify_one();
+        return future;
+    }
+
+    void worker_thread(void)
+    {
+        log_write_regular_information("thread pool: worker start");
+        while (true)
+        {
+            TaskWrapper task_to_run;
+
+            {
+                unique_lock lk{mtx_};
+
+                idle_threads_++;
+                cv_.wait(lk, [this]
+                         { return stop_ || !tasks_.empty(); });
+                idle_threads_--;
+
+                if (stop_ and tasks_.empty())
+                {
+                    log_write_regular_information("thread pool: worker exited");
+                    return;
+                }
+
+                task_to_run = move(const_cast<TaskWrapper &>(tasks_.top()));
+                tasks_.pop();
+            }
+
+            try
+            {
+                if (task_to_run.func)
+                    task_to_run.func();
+                else
+                    log_write_error_information("thread pool: worker: ignored empty task");
+            }
+            catch (const exception &e)
+            {
+                log_write_error_information("thread pool: worker: error occurred:" + string(e.what()));
+            }
+            catch (...)
+            {
+                log_write_error_information("thread pool: worker: unkown exception occurred");
+            }
+        }
+    }
+
     vector<thread> workers_;
     priority_queue<TaskWrapper, vector<TaskWrapper>, Compare> tasks_;
+
     mutex mtx_;
     condition_variable cv_;
+
     atomic<bool> stop_;
     atomic<size_t> seq_;
+
+    atomic<size_t> idle_threads_;
+    const size_t max_threads_;
 };
 
 class Buffer
@@ -565,7 +592,7 @@ namespace net
         EventLoop *loop_;
         string name_;
         State state_;
-        atomic<bool> reading_; // Consider if this atomic is truly needed or if state_ is sufficient
+        atomic<bool> reading_;
 
         Socket socket_;
         unique_ptr<Channel> channel_;
@@ -604,58 +631,73 @@ namespace net
         bool listening() const { return listening_; }
 
     private:
-        void handle_read(); // Handles incoming connections
+        void handle_read();
 
         EventLoop *loop_;
         Socket accept_socket_;
         Channel accept_channel_;
         NewConnectionCallback new_connection_cb_;
         bool listening_;
-        int idle_fd_; // Pre-opened fd for EMFILE handling
+        int idle_fd_;
     };
 
     class TcpServer
     {
     public:
-        using HandlerTag = string;
-        using Handler = function<string(const TcpConnectionPtr &, Buffer *)>;
+        using ProtocolHandler = std::function<std::string(const TcpConnectionPtr &conn,
+                                                          const std::string &tag,
+                                                          std::string_view payload)>;
+        using HandlerTag = std::string;
+        using Handler = std::function<std::string(const TcpConnectionPtr &, Buffer *)>;
 
-        TcpServer(EventLoop *loop, uint16_t port, string name = "MyTcpServer", bool reuse_port = true);
+        TcpServer(EventLoop *loop, uint16_t port, std::string name = "MyTcpServer", bool reuse_port = true);
         ~TcpServer();
 
         TcpServer(const TcpServer &) = delete;
         TcpServer &operator=(const TcpServer &) = delete;
+        TcpServer(TcpServer &&) = delete;
+        TcpServer &operator=(TcpServer &&) = delete;
 
+        void register_protocol_handler(const std::string &tag, ProtocolHandler cb);
+        void set_default_protocol_handler(ProtocolHandler cb);
         void register_handler(HandlerTag tag, Handler cb);
         void set_default_handler(Handler cb);
-
-        void set_connection_callback(const TcpConnection::ConnectionCallback &cb) { connection_cb_ = cb; }
-        void set_write_complete_callback(const TcpConnection::WriteCompleteCallback &cb) { write_complete_cb_ = cb; }
-
+        void set_connection_callback(const TcpConnection::ConnectionCallback &cb);
+        void set_write_complete_callback(const TcpConnection::WriteCompleteCallback &cb);
         void start();
-
         EventLoop *get_loop() const { return loop_; }
-        const string &name() const { return name_; }
+        const std::string &name() const { return name_; }
+        static std::string package_message(const std::string &tag, std::string_view payload);
 
     private:
+        bool attempt_protocol_processing(const TcpConnectionPtr &conn, Buffer *buf);
+        void execute_protocol_handler(const ProtocolHandler &handler, const TcpConnectionPtr &conn, Buffer *buf, const std::string &tag, size_t header_len, uint32_t payload_len);
+        bool execute_legacy_handler_for_tag(const std::string &tag, const TcpConnectionPtr &conn, Buffer *buf);
+        void execute_default_protocol_handler(const ProtocolHandler &handler, const TcpConnectionPtr &conn, Buffer *buf, const std::string &tag, size_t header_len, uint32_t payload_len);
+        bool process_legacy_fallback(const TcpConnectionPtr &conn, Buffer *buf, size_t initial_readable);
+        std::string on_message(const TcpConnectionPtr &conn, Buffer *buf);
         void new_connection(int sockfd, const sockaddr_in &peer_addr);
         void remove_connection(const TcpConnectionPtr &conn);
         void remove_connection_in_loop(const TcpConnectionPtr &conn);
-        string on_message(const TcpConnectionPtr &conn, Buffer *buf);
 
         EventLoop *loop_;
-        const string name_;
-        unique_ptr<Acceptor> acceptor_;
+        const std::string name_;
+
+        std::unique_ptr<Acceptor> acceptor_;
         bool started_;
         int next_conn_id_;
 
         TcpConnection::ConnectionCallback connection_cb_;
         TcpConnection::WriteCompleteCallback write_complete_cb_;
 
-        unordered_map<HandlerTag, Handler> handlers_;
+        std::unordered_map<std::string, ProtocolHandler> protocol_handlers_;
+        ProtocolHandler default_protocol_handler_;
+        std::unordered_map<HandlerTag, Handler> handlers_;
         Handler default_handler_;
 
-        unordered_map<string, TcpConnectionPtr> connections_;
+        std::unordered_map<std::string, TcpConnectionPtr> connections_;
+
+        static constexpr size_t kMaxPayloadSize = 64 * 1024 * 1024; // 64 MiB
     };
 }
 

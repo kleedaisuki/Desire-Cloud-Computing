@@ -1,4 +1,4 @@
-#define _CHANNEL_CPP
+#define _CLASS_TCPCONNECTION_CPP
 #include "network.hpp"
 using namespace net;
 
@@ -64,7 +64,7 @@ void TcpConnection::connect_destroyed()
         channel_->remove();
     }
 
-    if (was_connected && connection_cb_)
+    if (was_connected and connection_cb_)
         connection_cb_(shared_from_this());
     log_write_regular_information("TcpConnection::connect_destroyed [" + name_ + "] fd=" + (channel_ ? to_string(channel_->fd()) : "n/a"));
 }
@@ -109,7 +109,7 @@ void TcpConnection::send(Buffer *buf)
 void TcpConnection::send_in_loop(const void *data, size_t len)
 {
     loop_->assert_in_loop_thread();
-    if (state_ == State::kDisconnected || state_ == State::kDisconnecting)
+    if (state_ == State::kDisconnected or state_ == State::kDisconnecting)
     {
         log_write_warning_information("TcpConnection::send_in_loop [" + name_ + "] - disconnected or disconnecting, give up writing.");
         return;
@@ -121,13 +121,13 @@ void TcpConnection::send_in_loop(const void *data, size_t len)
 
     const char *char_data = static_cast<const char *>(data);
 
-    if (!channel_->is_writing() && output_buffer_.readable_bytes() == 0)
+    if (!channel_->is_writing() and output_buffer_.readable_bytes() == 0)
     {
         nwrote = ::write(channel_->fd(), char_data, len);
         if (nwrote >= 0)
         {
             remaining = len - nwrote;
-            if (remaining == 0 && write_complete_cb_)
+            if (remaining == 0 and write_complete_cb_)
             {
                 loop_->queue_in_loop([ptr = shared_from_this()]()
                                      {
@@ -138,10 +138,10 @@ void TcpConnection::send_in_loop(const void *data, size_t len)
         else
         {
             nwrote = 0;
-            if (errno != EWOULDBLOCK && errno != EAGAIN)
+            if (errno != EWOULDBLOCK and errno != EAGAIN)
             {
                 log_write_error_information("TcpConnection::send_in_loop [" + name_ + "] write error: " + errno_to_string(errno));
-                if (errno == EPIPE || errno == ECONNRESET)
+                if (errno == EPIPE or errno == ECONNRESET)
                     fault_error = true;
             }
         }
@@ -149,11 +149,11 @@ void TcpConnection::send_in_loop(const void *data, size_t len)
 
     assert(remaining <= len);
 
-    if (!fault_error && remaining > 0)
+    if (!fault_error and remaining > 0)
     {
         size_t old_len = output_buffer_.readable_bytes();
-        if (old_len + remaining >= high_water_mark_ &&
-            old_len < high_water_mark_ &&
+        if (old_len + remaining >= high_water_mark_ and
+            old_len < high_water_mark_ and
             high_water_mark_cb_)
         {
             loop_->queue_in_loop([ptr = shared_from_this(), current_len = old_len + remaining]()
@@ -201,7 +201,7 @@ void TcpConnection::shutdown_in_loop()
 
 void TcpConnection::force_close()
 {
-    if (state_ == State::kConnected || state_ == State::kDisconnecting)
+    if (state_ == State::kConnected or state_ == State::kDisconnecting)
     {
         set_state(State::kDisconnecting);
         loop_->queue_in_loop([ptr = shared_from_this()]()
@@ -227,23 +227,17 @@ void TcpConnection::handle_read()
         if (message_cb_)
         {
             auto self = shared_from_this();
-            // Submit task to thread pool
             auto fut = ThreadPool::instance().enqueue(
                 [this, self, buf_ptr = &input_buffer_]() -> string
                 {
-                    // Call the actual message processing callback in worker thread
-                    // ★ C++ 风格转型确认: static_cast 用于数值转换是正确的
                     return message_cb_(self, buf_ptr);
                 });
 
-            // Blocking get - consider async response handling if this blocks too long
             try
             {
                 string response = fut.get();
                 if (!response.empty())
-                {
                     send(response);
-                }
             }
             catch (const future_error &e)
             {
@@ -307,7 +301,7 @@ void TcpConnection::handle_write()
         else
         {
             log_write_error_information("TcpConnection::handle_write [" + name_ + "] write error: " + errno_to_string(errno));
-            if (errno != EWOULDBLOCK && errno != EAGAIN)
+            if (errno != EWOULDBLOCK and errno != EAGAIN)
                 handle_error();
         }
     }
@@ -322,7 +316,7 @@ void TcpConnection::handle_close()
                                   " state = " + to_string(static_cast<int>(state_)));
     if (state_ == State::kDisconnected)
         return;
-    assert(state_ == State::kConnected || state_ == State::kDisconnecting);
+    assert(state_ == State::kConnected or state_ == State::kDisconnecting);
 
     set_state(State::kDisconnected);
     channel_->disable_all();
