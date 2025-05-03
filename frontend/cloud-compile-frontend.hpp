@@ -10,4 +10,6 @@
 void make_sure_log_file(void) throws(runtime_error);
 void close_log_file(void) throws(runtime_error);
 
+int runMainWindow(const vector<string> &parameters);
+
 #endif

@@ -106,7 +106,7 @@ private:
         Task func;
 
         TaskWrapper() : priority(0), seq(0), func(nullptr) {}
-        TaskWrapper(int p, size_t s, Task f) : priority(p), seq(s), func(move(f)) {} // 使用移动语义接管 Task
+        TaskWrapper(int p, size_t s, Task f) : priority(p), seq(s), func(move(f)) {}
     };
 
     struct Compare
@@ -313,34 +313,34 @@ class ClientSocket
     class MessageHandler;
 
 public:
-    using Handler = std::function<void(const std::string &payload)>;
-    using ConnectionCallback = std::function<void(bool connected)>;
-    using ErrorCallback = std::function<void(const std::string &error_msg)>;
+    using Handler = function<void(const string &payload)>;
+    using ConnectionCallback = function<void(bool connected)>;
+    using ErrorCallback = function<void(const string &error_msg)>;
 
 private:
-    std::string server_ip_;
+    string server_ip_;
     uint16_t server_port_;
-    std::atomic<int> sockfd_;
-    std::atomic<bool> is_connected_;
-    std::atomic<bool> stop_requested_;
+    atomic<int> sockfd_;
+    atomic<bool> is_connected_;
+    atomic<bool> stop_requested_;
 
     ConnectionCallback connection_cb_;
     ErrorCallback error_cb_;
 
     ThreadPool &thread_pool_;
 
-    std::unique_ptr<ConnectionManager> connection_manager_;
-    std::unique_ptr<Sender> sender_;
-    std::unique_ptr<Receiver> receiver_;
-    std::unique_ptr<MessageHandler> message_handler_;
+    unique_ptr<ConnectionManager> connection_manager_;
+    unique_ptr<Sender> sender_;
+    unique_ptr<Receiver> receiver_;
+    unique_ptr<MessageHandler> message_handler_;
 
-    std::thread send_thread_;
-    std::thread recv_thread_;
+    thread send_thread_;
+    thread recv_thread_;
 
-    std::mutex connection_mutex_;
+    mutex connection_mutex_;
 
 public:
-    ClientSocket(std::string server_ip, uint16_t server_port);
+    ClientSocket(string server_ip, uint16_t server_port);
     ~ClientSocket();
 
     ClientSocket(const ClientSocket &) = delete;
@@ -350,14 +350,14 @@ public:
 
     bool connect();
     void disconnect();
-    bool is_connected() const { return is_connected_.load(std::memory_order_relaxed); }
+    bool is_connected() const { return is_connected_.load(memory_order_relaxed); }
 
-    bool send_message(const std::string &tag, std::string_view payload);
-    bool send_text(const std::string &tag, const std::string &text_payload);
-    bool send_binary(const std::string &tag, const std::vector<char> &binary_payload);
-    bool send_file(const std::string &tag, const std::string &file_path, size_t chunk_size = 64 * 1024);
+    bool send_message(const string &tag, string_view payload);
+    bool send_text(const string &tag, const string &text_payload);
+    bool send_binary(const string &tag, const vector<char> &binary_payload);
+    bool send_file(const string &tag, const string &file_path, size_t chunk_size = 64 * 1024);
 
-    void register_handler(const std::string &tag, Handler handler);
+    void register_handler(const string &tag, Handler handler);
     void register_default_handler(Handler handler);
     void register_connection_callback(ConnectionCallback cb);
     void register_error_callback(ErrorCallback cb);
@@ -368,9 +368,9 @@ private:
     friend class Receiver;
     friend class MessageHandler;
 
-    void trigger_error_callback_internal(const std::string &error_msg);
+    void trigger_error_callback_internal(const string &error_msg);
     void trigger_connection_callback_internal(bool connected);
-    void request_disconnect_async_internal(const std::string &reason);
+    void request_disconnect_async_internal(const string &reason);
     bool start_io_threads();
     void stop_and_join_io_threads();
     bool connect_internal();
@@ -455,7 +455,6 @@ private:
 
     public:
         explicit MessageHandler(ClientSocket &owner) : owner_(owner) {}
-
         void register_handler(const string &tag, Handler handler)
         {
             if (!handler)
@@ -464,10 +463,8 @@ private:
                 return;
             }
             unique_lock lock(handler_rw_mutex_);
-            handlers_[tag] = move(handler);
             log_write_regular_information("Registered handler for tag: " + tag);
         }
-
         void register_default_handler(Handler handler)
         {
             if (!handler)

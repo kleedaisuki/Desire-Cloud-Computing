@@ -38,4 +38,8 @@ test-dir
 .vscode
 
 # Build
-make.sh
+frontend/build
+frontend/CMakeFiles
+
+#Qt
+frontend/.qt
