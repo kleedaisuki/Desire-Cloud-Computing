@@ -1,6 +1,23 @@
+// Copyright (C) [2025] [@kleedaisuki] <kleedaisuki@outlook.com>
+// This file is part of Simple-K Cloud Executor.
+//
+// Simple-K Cloud Executor is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Simple-K Cloud Executor is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Simple-K Cloud Executor.  If not, see <https://www.gnu.org/licenses/>.
+
 #ifndef _BACKEND_NETWORK_HPP
 #define _BACKEND_NETWORK_HPP
 
+#include <iostream>
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -533,7 +550,7 @@ namespace net
         using ConnectionCallback = function<void(const TcpConnectionPtr &)>;
         using WriteCompleteCallback = function<void(const TcpConnectionPtr &)>;
         using HighWaterMarkCallback = function<void(const TcpConnectionPtr &, size_t)>;
-        using CloseCallback = function<void(const TcpConnectionPtr &)>; // Renamed for clarity
+        using CloseCallback = function<void(const TcpConnectionPtr &)>;
 
         TcpConnection(EventLoop *loop,
                       string name,
@@ -644,13 +661,14 @@ namespace net
     class TcpServer
     {
     public:
-        using ProtocolHandler = std::function<std::string(const TcpConnectionPtr &conn,
-                                                          const std::string &tag,
-                                                          std::string_view payload)>;
-        using HandlerTag = std::string;
-        using Handler = std::function<std::string(const TcpConnectionPtr &, Buffer *)>;
+        using HandlerTag = string;
+        using Handler = function<string(const TcpConnectionPtr &, Buffer *)>;
+        using ProtocolHandlerPair = pair<HandlerTag, string>;
+        using ProtocolHandler = function<ProtocolHandlerPair(const TcpConnectionPtr &conn,
+                                                                  const string &tag,
+                                                                  string_view payload)>;
 
-        TcpServer(EventLoop *loop, uint16_t port, std::string name = "MyTcpServer", bool reuse_port = true);
+        TcpServer(EventLoop *loop, uint16_t port, string name = "MyTcpServer", bool reuse_port = true);
         ~TcpServer();
 
         TcpServer(const TcpServer &) = delete;
@@ -658,7 +676,7 @@ namespace net
         TcpServer(TcpServer &&) = delete;
         TcpServer &operator=(TcpServer &&) = delete;
 
-        void register_protocol_handler(const std::string &tag, ProtocolHandler cb);
+        void register_protocol_handler(const string &tag, ProtocolHandler cb);
         void set_default_protocol_handler(ProtocolHandler cb);
         void register_handler(HandlerTag tag, Handler cb);
         void set_default_handler(Handler cb);
@@ -666,36 +684,36 @@ namespace net
         void set_write_complete_callback(const TcpConnection::WriteCompleteCallback &cb);
         void start();
         EventLoop *get_loop() const { return loop_; }
-        const std::string &name() const { return name_; }
-        static std::string package_message(const std::string &tag, std::string_view payload);
+        const string &name() const { return name_; }
+        static string package_message(const string &tag, string_view payload);
 
     private:
         bool attempt_protocol_processing(const TcpConnectionPtr &conn, Buffer *buf);
-        void execute_protocol_handler(const ProtocolHandler &handler, const TcpConnectionPtr &conn, Buffer *buf, const std::string &tag, size_t header_len, uint32_t payload_len);
-        bool execute_legacy_handler_for_tag(const std::string &tag, const TcpConnectionPtr &conn, Buffer *buf);
-        void execute_default_protocol_handler(const ProtocolHandler &handler, const TcpConnectionPtr &conn, Buffer *buf, const std::string &tag, size_t header_len, uint32_t payload_len);
+        void execute_protocol_handler(const ProtocolHandler &handler, const TcpConnectionPtr &conn, Buffer *buf, const string &tag, size_t header_len, uint32_t payload_len);
+        bool execute_legacy_handler_for_tag(const string &tag, const TcpConnectionPtr &conn, Buffer *buf);
+        void execute_default_protocol_handler(const ProtocolHandler &handler, const TcpConnectionPtr &conn, Buffer *buf, const string &tag, size_t header_len, uint32_t payload_len);
         bool process_legacy_fallback(const TcpConnectionPtr &conn, Buffer *buf, size_t initial_readable);
-        std::string on_message(const TcpConnectionPtr &conn, Buffer *buf);
+        string on_message(const TcpConnectionPtr &conn, Buffer *buf);
         void new_connection(int sockfd, const sockaddr_in &peer_addr);
         void remove_connection(const TcpConnectionPtr &conn);
         void remove_connection_in_loop(const TcpConnectionPtr &conn);
 
         EventLoop *loop_;
-        const std::string name_;
+        const string name_;
 
-        std::unique_ptr<Acceptor> acceptor_;
+        unique_ptr<Acceptor> acceptor_;
         bool started_;
         int next_conn_id_;
 
         TcpConnection::ConnectionCallback connection_cb_;
         TcpConnection::WriteCompleteCallback write_complete_cb_;
 
-        std::unordered_map<std::string, ProtocolHandler> protocol_handlers_;
+        unordered_map<string, ProtocolHandler> protocol_handlers_;
         ProtocolHandler default_protocol_handler_;
-        std::unordered_map<HandlerTag, Handler> handlers_;
+        unordered_map<HandlerTag, Handler> handlers_;
         Handler default_handler_;
 
-        std::unordered_map<std::string, TcpConnectionPtr> connections_;
+        unordered_map<string, TcpConnectionPtr> connections_;
 
         static constexpr size_t kMaxPayloadSize = 64 * 1024 * 1024; // 64 MiB
     };

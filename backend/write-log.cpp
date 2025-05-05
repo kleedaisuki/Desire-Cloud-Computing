@@ -1,3 +1,19 @@
+// Copyright (C) [2025] [@kleedaisuki] <kleedaisuki@outlook.com>
+// This file is part of Simple-K Cloud Executor.
+//
+// Simple-K Cloud Executor is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Simple-K Cloud Executor is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Simple-K Cloud Executor.  If not, see <https://www.gnu.org/licenses/>.
+
 #define _WRITE_LOG_CPP
 #include "cloud-compile-backend.hpp"
 
@@ -161,14 +177,14 @@ inline string formatLogMessage(const char *level, const string &information)
 {
     using namespace chrono;
     auto now = system_clock::now();
-    auto ms = duration_cast<milliseconds>(now.time_since_epoch()) % 1000; // Milliseconds part
+    auto ms = duration_cast<microseconds>(now.time_since_epoch()) % 1000000;
     time_t tt = system_clock::to_time_t(now);
 
     struct tm prepared_time;
     if (localtime_r(&tt, &prepared_time) == nullptr)
     {
         ostringstream error_oss;
-        error_oss << "[TIME_ERR] " << level << " @thread-" << this_thread::get_id() << "\n"
+        error_oss << "[TIME_ERR] " << level
                   << information;
         return error_oss.str();
     }
@@ -176,7 +192,7 @@ inline string formatLogMessage(const char *level, const string &information)
     ostringstream oss;
     oss << put_time(&prepared_time, "%Y-%m-%d %H:%M:%S");
     oss << '.' << setfill('0') << setw(3) << ms.count();
-    oss << ' ' << level << " @thread-" << this_thread::get_id();
+    oss << ' ' << level;
     oss << "\n"
         << information;
 

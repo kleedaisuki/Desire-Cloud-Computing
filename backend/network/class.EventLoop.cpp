@@ -1,3 +1,19 @@
+// Copyright (C) [2025] [@kleedaisuki] <kleedaisuki@outlook.com>
+// This file is part of Simple-K Cloud Executor.
+//
+// Simple-K Cloud Executor is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Simple-K Cloud Executor is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Simple-K Cloud Executor.  If not, see <https://www.gnu.org/licenses/>.
+
 #define _CLASS_EVENTLOOP_CPP
 #include "network.hpp"
 using namespace net;
@@ -118,7 +134,6 @@ void EventLoop::update_channel(Channel *channel)
         {
             if (::epoll_ctl(epoll_fd_.fd(), EPOLL_CTL_DEL, fd, nullptr) == -1)
                 log_write_error_information("epoll_ctl op=DEL fd=" + to_string(fd) + " failed: " + errno_to_string(errno));
-            channels_.erase(fd);
         }
         else
         {
@@ -216,7 +231,7 @@ void EventLoop::wakeup()
 {
     uint64_t one = 1;
     ssize_t n = ::write(wakeup_fd_.fd(), &one, sizeof one);
-    if (n != sizeof one)
+    if (n != sizeof(one))
         log_write_error_information("EventLoop::wakeup() writes " + to_string(n) + " bytes instead of 8 to wakeup fd " + to_string(wakeup_fd_.fd()) + ": " + errno_to_string(errno));
     log_write_regular_information("Waking up loop thread");
 }

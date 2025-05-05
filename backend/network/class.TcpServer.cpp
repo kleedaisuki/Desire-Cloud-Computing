@@ -1,3 +1,19 @@
+// Copyright (C) [2025] [@kleedaisuki] <kleedaisuki@outlook.com>
+// This file is part of Simple-K Cloud Executor.
+//
+// Simple-K Cloud Executor is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Simple-K Cloud Executor is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Simple-K Cloud Executor.  If not, see <https://www.gnu.org/licenses/>.
+
 #define _CLASS_TCPSERVER_CPP
 #include "network.hpp"
 using namespace net;
@@ -10,10 +26,10 @@ TcpServer::TcpServer(EventLoop *loop, uint16_t port, string name, bool reuse_por
       next_conn_id_{1},
       connection_cb_{[](const TcpConnectionPtr &) { /* Default no-op */ }},
       write_complete_cb_{[](const TcpConnectionPtr &) { /* Default no-op */ }},
-      default_protocol_handler_{[](const TcpConnectionPtr &conn, const string &tag, string_view /*payload*/) -> string
+      default_protocol_handler_{[](const TcpConnectionPtr &conn, const string &tag, string_view /*payload*/) -> ProtocolHandlerPair
                                 {
                                     log_write_warning_information("Using default protocol handler for unknown tag: " + tag + " on connection " + conn->name());
-                                    return "Error: Unknown protocol command '" + tag + "'";
+                                    return ProtocolHandlerPair("ERROR", "Error: Unknown protocol command '" + tag + "'");
                                 }},
       default_handler_{[](const TcpConnectionPtr &conn, Buffer *buf) -> string
                        {
@@ -22,7 +38,7 @@ TcpServer::TcpServer(EventLoop *loop, uint16_t port, string name, bool reuse_por
                            return "Error: Unrecognized command or data format: '" + received.substr(0, 50) + (received.length() > 50 ? "..." : "") + "'\r\n";
                        }}
 {
-    acceptor_ = make_unique<Acceptor>(loop, port, reuse_port);
+    log_write_regular_information("Starting server on port " + to_string(port) + "...");
     acceptor_->set_new_connection_callback(
         [this](int sockfd, const sockaddr_in &peer_addr)
         {
@@ -44,6 +60,7 @@ TcpServer::~TcpServer()
         }
     }
     connections_.clear();
+    log_write_regular_information("Server exited.");
 }
 
 void TcpServer::register_protocol_handler(const string &tag, ProtocolHandler cb)
@@ -53,7 +70,7 @@ void TcpServer::register_protocol_handler(const string &tag, ProtocolHandler cb)
         log_write_error_information("Cannot register protocol handler: Tag length exceeds 255 bytes. Tag: " + tag);
         return;
     }
-    protocol_handlers_[tag] = move(cb);
+    protocol_handlers_.insert_or_assign(tag, cb);
     log_write_regular_information("Registered protocol handler for tag: " + tag);
 }
 
@@ -70,7 +87,7 @@ void TcpServer::register_handler(HandlerTag tag, Handler cb)
         log_write_error_information("Cannot register legacy handler: Tag length exceeds 255 bytes. Tag: " + tag);
         return;
     }
-    handlers_[tag] = move(cb);
+    handlers_.insert_or_assign(tag, cb);
     log_write_regular_information("Registered legacy handler for tag: " + tag);
 }
 
@@ -222,7 +239,7 @@ bool TcpServer::attempt_protocol_processing(const TcpConnectionPtr &conn, Buffer
 
 void TcpServer::execute_protocol_handler(const ProtocolHandler &handler, const TcpConnectionPtr &conn, Buffer *buf, const string &tag, size_t header_len, uint32_t payload_len)
 {
-    string response;
+    ProtocolHandlerPair response;
     try
     {
         buf->retrieve(header_len);
@@ -234,27 +251,25 @@ void TcpServer::execute_protocol_handler(const ProtocolHandler &handler, const T
     catch (const exception &e)
     {
         log_write_error_information("ProtocolHandler exception for tag [" + tag + "] on connection [" + conn->name() + "]: " + string(e.what()));
-        response = "Internal server error (protocol handler exception).";
+        response.second = "Internal server error (protocol handler exception).";
         if (buf->readable_bytes() >= payload_len)
             buf->retrieve(payload_len);
     }
     catch (...)
     {
         log_write_error_information("Unknown ProtocolHandler exception for tag [" + tag + "] on connection [" + conn->name() + "].");
-        response = "Unknown internal server error (protocol handler exception).";
+        response.second = "Unknown internal server error (protocol handler exception).";
         if (buf->readable_bytes() >= payload_len)
         {
             buf->retrieve(payload_len);
         }
     }
 
-    if (!response.empty())
+    if (!response.second.empty())
     {
-        string packaged_response = TcpServer::package_message(tag, response);
+        string packaged_response = TcpServer::package_message(response.first, response.second);
         if (!packaged_response.empty())
-        {
             conn->send(packaged_response);
-        }
     }
 }
 
@@ -291,7 +306,7 @@ bool TcpServer::execute_legacy_handler_for_tag(const string &tag, const TcpConne
 void TcpServer::execute_default_protocol_handler(const ProtocolHandler &handler, const TcpConnectionPtr &conn, Buffer *buf, const string &tag, size_t header_len, uint32_t payload_len)
 {
     log_write_warning_information("TcpServer::execute_default_protocol_handler [" + conn->name() + "] - Using NEW default_protocol_handler for tag '" + tag + "'.");
-    string response;
+    ProtocolHandlerPair response;
     try
     {
         buf->retrieve(header_len);
@@ -303,7 +318,7 @@ void TcpServer::execute_default_protocol_handler(const ProtocolHandler &handler,
     catch (const exception &e)
     {
         log_write_error_information("Default ProtocolHandler exception for tag [" + tag + "] on connection [" + conn->name() + "]: " + string(e.what()));
-        response = "Internal server error (default protocol handler exception).";
+        response.second = "Internal server error (default protocol handler exception).";
         if (buf->readable_bytes() >= payload_len)
         {
             buf->retrieve(payload_len);
@@ -312,19 +327,15 @@ void TcpServer::execute_default_protocol_handler(const ProtocolHandler &handler,
     catch (...)
     {
         log_write_error_information("Unknown Default ProtocolHandler exception for tag [" + tag + "] on connection [" + conn->name() + "].");
-        response = "Unknown internal server error (default protocol handler exception).";
+        response.second = "Unknown internal server error (default protocol handler exception).";
         if (buf->readable_bytes() >= payload_len)
-        {
             buf->retrieve(payload_len);
-        }
     }
-    if (!response.empty())
+    if (!response.second.empty())
     {
-        string packaged_response = TcpServer::package_message(tag, response);
+        string packaged_response = TcpServer::package_message(response.first, response.second);
         if (!packaged_response.empty())
-        {
             conn->send(packaged_response);
-        }
     }
 }
 
@@ -404,12 +415,14 @@ void TcpServer::new_connection(int sockfd, const sockaddr_in &peer_addr)
     conn->set_message_callback(
         [this](const TcpConnectionPtr &c, Buffer *b)
         {
+            log_write_regular_information("message at: " + c->name());
             return on_message(c, b);
         });
     conn->set_write_complete_callback(write_complete_cb_);
     conn->set_close_callback(
         [this](const TcpConnectionPtr &c)
         {
+            log_write_regular_information("connection close: " + c->name());
             remove_connection(c);
         });
 

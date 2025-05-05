@@ -1,3 +1,19 @@
+// Copyright (C) [2025] [@kleedaisuki] <kleedaisuki@outlook.com>
+// This file is part of Simple-K Cloud Executor.
+//
+// Simple-K Cloud Executor is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Simple-K Cloud Executor is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Simple-K Cloud Executor.  If not, see <https://www.gnu.org/licenses/>.
+
 #define _CLASS_TCPCONNECTION_CPP
 #include "network.hpp"
 using namespace net;
@@ -10,7 +26,7 @@ TcpConnection::TcpConnection(EventLoop *loop,
     : loop_{loop},
       name_{move(name)},
       state_{State::kConnecting},
-      reading_{true}, // Default to reading
+      reading_{true},
       socket_{sockfd},
       channel_{make_unique<Channel>(loop, sockfd)},
       local_addr_{local_addr},
@@ -42,6 +58,7 @@ TcpConnection::~TcpConnection()
 
 void TcpConnection::connect_established()
 {
+    log_write_regular_information("TcpConnection::connect_established at " + this->name_);
     loop_->assert_in_loop_thread();
     assert(state_ == State::kConnecting);
     set_state(State::kConnected);
@@ -77,7 +94,7 @@ void TcpConnection::send(string_view message)
             send_in_loop(message.data(), message.size());
         else
         {
-            string msg_copy = string(message); // Must copy for cross-thread
+            string msg_copy = string(message);
             loop_->run_in_loop([ptr = shared_from_this(), msg = move(msg_copy)]()
                                { ptr->send_in_loop(msg.data(), msg.size()); });
         }
@@ -97,7 +114,7 @@ void TcpConnection::send(Buffer *buf)
         }
         else
         {
-            string msg_copy = buf->retrieve_all_as_string(); // Copy buffer content
+            string msg_copy = buf->retrieve_all_as_string();
             loop_->run_in_loop([ptr = shared_from_this(), msg = move(msg_copy)]()
                                { ptr->send_in_loop(msg.data(), msg.size()); });
         }
@@ -189,7 +206,7 @@ void TcpConnection::shutdown_in_loop()
 {
     loop_->assert_in_loop_thread();
     if (!channel_->is_writing())
-    { // Only shutdown if not waiting for writes
+    {
         if (::shutdown(socket_.fd(), SHUT_WR) < 0)
             log_write_error_information("TcpConnection::shutdown_in_loop [" + name_ + "] SHUT_WR error: " + errno_to_string(errno));
         else
@@ -227,33 +244,31 @@ void TcpConnection::handle_read()
         if (message_cb_)
         {
             auto self = shared_from_this();
-            auto fut = ThreadPool::instance().enqueue(
-                [this, self, buf_ptr = &input_buffer_]() -> string
+            ThreadPool::instance().enqueue(
+                [this, self, buf_ptr = &input_buffer_]() -> void
                 {
-                    return message_cb_(self, buf_ptr);
+                    string response = message_cb_(self, buf_ptr);
+                    try
+                    {
+                        if (!response.empty())
+                            send(response);
+                    }
+                    catch (const future_error &e)
+                    {
+                        log_write_error_information("Future error getting result for connection [" + name_ + "]: " + string(e.what()) + " code: " + to_string(e.code().value()));
+                        send("Error processing request (future).\r\n");
+                    }
+                    catch (const exception &e)
+                    {
+                        log_write_error_information("MessageCallback exception for connection [" + name_ + "]: " + string(e.what()));
+                        send("Error processing request.\r\n");
+                    }
+                    catch (...)
+                    {
+                        log_write_error_information("Unknown exception during MessageCallback for connection [" + name_ + "]");
+                        send("Unknown error processing request.\r\n");
+                    }
                 });
-
-            try
-            {
-                string response = fut.get();
-                if (!response.empty())
-                    send(response);
-            }
-            catch (const future_error &e)
-            {
-                log_write_error_information("Future error getting result for connection [" + name_ + "]: " + string(e.what()) + " code: " + to_string(e.code().value()));
-                send("Error processing request (future).\r\n");
-            }
-            catch (const exception &e)
-            {
-                log_write_error_information("MessageCallback exception for connection [" + name_ + "]: " + string(e.what()));
-                send("Error processing request.\r\n");
-            }
-            catch (...)
-            {
-                log_write_error_information("Unknown exception during MessageCallback for connection [" + name_ + "]");
-                send("Unknown error processing request.\r\n");
-            }
         }
         else
         {

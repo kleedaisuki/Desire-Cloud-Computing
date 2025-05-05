@@ -39,7 +39,5 @@ test-dir
 
 # Build
 frontend/build
-frontend/CMakeFiles
-
-#Qt
-frontend/.qt
+backend/build
+build

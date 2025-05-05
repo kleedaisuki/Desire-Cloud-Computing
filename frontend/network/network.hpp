@@ -1,3 +1,19 @@
+// Copyright (C) [2025] [@kleedaisuki] <kleedaisuki@outlook.com>
+// This file is part of Simple-K Cloud Executor.
+//
+// Simple-K Cloud Executor is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Simple-K Cloud Executor is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Simple-K Cloud Executor.  If not, see <https://www.gnu.org/licenses/>.
+
 #ifndef _BACKEND_NETWORK_HPP
 #define _BACKEND_NETWORK_HPP
 
@@ -390,6 +406,7 @@ private:
         {
             if (sockfd_ref != -1)
             {
+                log_write_regular_information("socket closed.");
                 shutdown(sockfd_ref, SHUT_RDWR);
                 close(sockfd_ref);
                 sockfd_ref = -1;
@@ -463,6 +480,7 @@ private:
                 return;
             }
             unique_lock lock(handler_rw_mutex_);
+            handlers_.insert_or_assign(tag, handler);
             log_write_regular_information("Registered handler for tag: " + tag);
         }
         void register_default_handler(Handler handler)
