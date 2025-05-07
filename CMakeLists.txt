@@ -1,24 +1,35 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(a VERSION 1.0 LANGUAGES CXX)
+project(Simple-K-Executor VERSION 1.0 LANGUAGES CXX)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-add_compile_options(
--Wall
--Wextra
--Wpedantic 
--Wshadow 
--Wconversion
--Wsign-conversion
--Wfloat-equal
-)
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+  message(STATUS "Build type not specified, defaulting to Release.")
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the build type (Debug, Release, RelWithDebInfo, MinSizeRel, NativeOptimizationRelease)" FORCE)
+else()
+  set(KNOWN_BUILD_TYPES Debug Release RelWithDebInfo MinSizeRel NativeOptimizationRelease)
+  list(FIND KNOWN_BUILD_TYPES "${CMAKE_BUILD_TYPE}" IS_KNOWN)
+  if(IS_KNOWN EQUAL -1)
+    message(WARNING "Specified build type '${CMAKE_BUILD_TYPE}' is not a standard or predefined type. Ensure relevant compiler flags are set.")
+  endif()
+endif()
+message(STATUS "Current build type: ${CMAKE_BUILD_TYPE}")
 
-# add_compile_options(-O2 -flto)
-# add_compile_options(-march=native)
+set(DEBUG_EXCLUSIVE_WARNING_FLAGS "-Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion -Wfloat-equal")
 
-add_compile_options(-Og -g)
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -Og -g ${DEBUG_EXCLUSIVE_WARNING_FLAGS}")
+set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O2 -flto -DNDEBUG")
+set(CMAKE_CXX_FLAGS_NATIVEOPTIMIZATIONRELEASE "${CMAKE_CXX_FLAGS_NATIVEOPTIMIZATIONRELEASE} -O2 -flto -march=native -DNDEBUG")
+
+set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTOUIC ON)
+set(CMAKE_AUTORCC ON)
+
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets) # 查找 Qt6 库
+message(STATUS "Qt6 libraries found. Components: ${Qt6_FOUND_COMPONENTS}")
 
 add_executable(back.exe
     backend/main.cpp
@@ -33,15 +44,10 @@ add_executable(back.exe
     backend/network/class.EventLoop.cpp
     backend/network/class.TcpServer.cpp
 )
-
-set(CMAKE_AUTOMOC ON)
-set(CMAKE_AUTOUIC ON)
-set(CMAKE_AUTORCC ON)
-
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
+message(STATUS "Backend target 'back.exe' configured.")
 
 qt_add_executable(front.exe
-    frontend/main.cpp                 
+    frontend/main.cpp
     frontend/global-constant.cpp
     frontend/write-log.cpp
 
@@ -55,3 +61,6 @@ qt_add_executable(front.exe
 )
 
 target_link_libraries(front.exe PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets)
+message(STATUS "Frontend target 'front.exe' configured and linked with Qt6 libraries.")
+
+message(STATUS "CMake configuration finished!")
