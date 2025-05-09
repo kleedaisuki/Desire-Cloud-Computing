@@ -145,16 +145,57 @@ bool ClientSocket::send_message(const string &tag, string_view payload)
     }
     uint8_t tag_len = static_cast<uint8_t>(tag.length());
     uint32_t payload_len_net = htonl(static_cast<uint32_t>(payload.length()));
-    vector<char> message;
-    message.reserve(1 + tag_len + sizeof(payload_len_net) + payload.length());
-    message.push_back(static_cast<char>(tag_len));
-    message.insert(message.end(), tag.begin(), tag.end());
-    const char *len_bytes = reinterpret_cast<const char *>(&payload_len_net);
-    message.insert(message.end(), len_bytes, len_bytes + sizeof(payload_len_net));
-    message.insert(message.end(), payload.begin(), payload.end());
-    sender_->enqueue_message(move(message));
+    unique_ptr<char[]> message = make_unique<char[]>(1 + tag_len + sizeof(payload_len_net) + payload.length());
+    char *writer = message.get();
+
+    *writer = static_cast<char>(tag_len), writer++;
+    memcpy(writer, tag.data(), tag_len), writer += tag_len;
+
+    memcpy(writer, reinterpret_cast<const char *>(&payload_len_net), sizeof(payload_len_net)), writer += sizeof(payload_len_net);
+    memcpy(writer, payload.data(), payload.length());
+    sender_->enqueue_message(move(message), 1 + tag_len + sizeof(payload_len_net) + payload.length());
     return true;
 }
+
+bool ClientSocket::send_message(const string &tag, unique_ptr<char[]> buffer, size_t buflen)
+{
+    if (!is_connected_.load(memory_order_relaxed))
+    {
+        log_write_warning_information("Cannot send message: Not connected.");
+        return false;
+    }
+    if (!sender_)
+    {
+        log_write_error_information("Cannot send message: Sender component is not initialized.");
+        return false;
+    }
+    if (tag.length() > numeric_limits<uint8_t>::max())
+    {
+        log_write_warning_information("Tag too long");
+        return false;
+    }
+    if (buflen > numeric_limits<uint32_t>::max())
+    {
+        log_write_warning_information("Payload too long");
+        return false;
+    }
+
+    uint8_t tag_len = static_cast<uint8_t>(tag.length());
+    uint32_t payload_len_net = htonl(static_cast<uint32_t>(buflen));
+    unique_ptr<char[]> message = make_unique<char[]>(1 + tag_len + sizeof(payload_len_net) + buflen);
+
+    char *writer = message.get();
+    *writer = static_cast<char>(tag_len), writer++;
+    memcpy(writer, tag.c_str(), tag_len), writer += tag_len;
+
+    const char *len_bytes = reinterpret_cast<const char *>(&payload_len_net);
+    memcpy(writer, len_bytes, sizeof(payload_len_net)), writer += sizeof(payload_len_net);
+
+    memcpy(writer, buffer.get(), buflen);
+    sender_->enqueue_message(move(message), 1 + tag_len + sizeof(payload_len_net) + buflen);
+    return true;
+}
+
 bool ClientSocket::send_text(const string &tag, const string &text_payload) { return send_message(tag, text_payload); }
 bool ClientSocket::send_binary(const string &tag, const vector<char> &binary_payload) { return send_message(tag, string_view(binary_payload.data(), binary_payload.size())); }
 
@@ -175,31 +216,55 @@ bool ClientSocket::send_file(const string &tag, const string &file_path, size_t 
         log_write_error_information("Failed to get file size or file not seekable: " + file_path);
         return false;
     }
-    vector<char> buffer(chunk_size);
-    while (ifs and is_connected())
+
+    list<tuple<unique_ptr<char[]>, size_t>> components;
+    size_t total = 0;
+
+    string filename = filesystem::path(file_path).filename().string();
+    unique_ptr<char[]> head = make_unique<char[]>(filename.length() + 1);
+    char *writer = head.get();
+    memcpy(writer, filename.c_str(), filename.length()), writer += filename.length();
+    *writer = '\0', writer++;
+    components.push_back({move(head), filename.length() + 1}), total += filename.length() + 1;
+
+    while (ifs)
     {
-        ifs.read(buffer.data(), buffer.size());
+        unique_ptr<char[]> msg = make_unique<char[]>(chunk_size);
+        writer = msg.get();
+        ifs.read(writer, chunk_size);
         streamsize bytes_read = ifs.gcount();
         if (bytes_read <= 0)
             break;
-        if (!send_message(tag, string_view(buffer.data(), static_cast<size_t>(bytes_read))))
-        {
-            log_write_error_information("Failed to send file chunk for: " + file_path);
-            return false;
-        }
+        components.push_back({move(msg), bytes_read}), total += bytes_read;
     }
     if (ifs.bad())
     {
         log_write_error_information("Error reading file: " + file_path);
         return false;
     }
+
+    unique_ptr<char[]> msg = make_unique<char[]>(total);
+    writer = msg.get();
+    for (auto &[ptr, len] : components)
+        memcpy(writer, ptr.get(), len), writer += len;
+
+    if (is_connected())
+    {
+        if (!send_message(tag, move(msg), total))
+        {
+            log_write_error_information("Failed to send file chunk for: " + file_path);
+            return false;
+        }
+    }
     return is_connected();
 }
+
 void ClientSocket::register_handler(const string &tag, Handler handler)
 {
     if (message_handler_)
         message_handler_->register_handler(tag, move(handler));
 }
+
 void ClientSocket::register_default_handler(Handler handler)
 {
     if (message_handler_)
@@ -208,7 +273,6 @@ void ClientSocket::register_default_handler(Handler handler)
 
 void ClientSocket::register_connection_callback(ConnectionCallback cb) { connection_cb_ = move(cb); }
 void ClientSocket::register_error_callback(ErrorCallback cb) { error_cb_ = move(cb); }
-
 
 void ClientSocket::trigger_error_callback_internal(const string &error_msg)
 {

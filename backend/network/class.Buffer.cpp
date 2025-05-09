@@ -34,22 +34,21 @@ void Buffer::make_space(size_t len)
 
 ssize_t Buffer::read_fd(int fd, int *saved_errno)
 {
-    char extrabuf[65536]; // Consider making this size configurable or smaller
+    char extrabuf[65536];
     struct iovec vec[2];
     const size_t writable = writable_bytes();
     vec[0].iov_base = begin_write();
     vec[0].iov_len = writable;
     vec[1].iov_base = extrabuf;
     vec[1].iov_len = sizeof(extrabuf);
-    // Avoid using iovcnt = 1 even if writable is large enough, always provide extrabuf
-    const int iovcnt = 2; // Simplified: Always use two buffers
+    const int iovcnt = 2;
 
     const ssize_t n = ::readv(fd, vec, iovcnt);
 
     if (n < 0)
     {
         *saved_errno = errno;
-        return -1; // <<< --- FIX: Return immediately on error ---
+        return -1;
     }
     else if (n == 0)
         return 0;

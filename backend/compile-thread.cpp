@@ -117,8 +117,7 @@ string compile_files(const vector<string> &instructions)
         pipe_write_end.reset();
 
         vector<const char *> argv;
-        string command = "g++";
-        argv.push_back(command.c_str());
+        argv.push_back("g++");
         for (const string &arg : instructions)
             argv.push_back(arg.c_str());
         argv.push_back(nullptr);
@@ -193,7 +192,7 @@ string compile_files(const vector<string> &instructions)
     }
 }
 
-pair<string, string> execute_executable(const vector<string> &command_line, const string &input_filename)
+tuple<bool, string, string> execute_executable(const vector<string> &command_line, const string &input_filename)
 {
     string out_filename = "";
     string err_filename = "";
@@ -201,7 +200,7 @@ pair<string, string> execute_executable(const vector<string> &command_line, cons
     if (command_line.empty())
     {
         log_write_error_information("execute_executable received empty command line: even no executable given");
-        return {"Error", "execute_executable received empty command line: even no executable given"};
+        return {true, "execute_executable received empty command line: even no executable given", ""};
     }
 
     auto now = chrono::system_clock::now();
@@ -228,7 +227,7 @@ pair<string, string> execute_executable(const vector<string> &command_line, cons
         {
             string error_info = "Failed to open input file '" + input_filename + "': " + strerror(errno);
             log_write_error_information(error_info);
-            return {"Error", move(error_info)};
+            return {true, move(error_info), ""};
         }
         input_fd_guard.reset(in_fd);
     }
@@ -238,7 +237,7 @@ pair<string, string> execute_executable(const vector<string> &command_line, cons
     {
         string error_info = "Failed to open output file '" + out_filename + "': " + strerror(errno);
         log_write_error_information(error_info);
-        return {"Error", move(error_info)};
+        return {true, move(error_info), ""};
     }
     output_fd_guard.reset(out_fd);
 
@@ -247,7 +246,7 @@ pair<string, string> execute_executable(const vector<string> &command_line, cons
     {
         string error_info = "Failed to open error file '" + err_filename + "': " + strerror(errno);
         log_write_error_information(error_info);
-        return {"Error", move(error_info)};
+        return {true, move(error_info), ""};
     }
     error_fd_guard.reset(err_fd);
 
@@ -286,10 +285,11 @@ pair<string, string> execute_executable(const vector<string> &command_line, cons
             string errno_information = string(strerror(errno));
             log_write_error_information("waitpid failed for PID " + to_string(pid) + ": " + errno_information);
             if (out_filename.length() or err_filename.length())
-                return {"Error", "waitpid failed for PID " + to_string(pid) + ": " + errno_information +
-                                     "\nfile(s) created:" + out_filename + ',' + err_filename};
+                return {true,
+                        "waitpid failed for PID " + to_string(pid) + ": " + errno_information + "\nfile(s) created:" + out_filename + ',' + err_filename,
+                        ""};
             else
-                return {"Error", "waitpid failed for PID " + to_string(pid) + ": " + errno_information};
+                return {true, "waitpid failed for PID " + to_string(pid) + ": " + errno_information, ""};
         }
 
         if (WIFEXITED(child_status))
@@ -309,12 +309,12 @@ pair<string, string> execute_executable(const vector<string> &command_line, cons
         else
             log_write_error_information("Executable process (PID " + to_string(pid) + ") terminated abnormally.");
 
-        return {out_filename, err_filename};
+        return {false, out_filename, err_filename};
     }
     else
     {
         string info = "Failed to fork process: " + string(strerror(errno));
         log_write_error_information(info);
-        return {"Error", move(info)};
+        return {true, move(info), ""};
     }
 }

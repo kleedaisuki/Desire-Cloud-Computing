@@ -19,7 +19,40 @@
 int main(int argc, char *argv[])
 {
     ClientSocket client(SERVER_IP, DEFAULT_PORT);
+    client.register_default_handler([](const string &payload)
+                                    { log_write_warning_information("(client default handler) message received but no tag met: " + payload); });
+
+    client.register_handler("Hello", [](const string &payload)
+                            { log_write_regular_information("received Hello: " + payload); });
+    client.register_handler("error-information", [](const string &payload)
+                            { log_write_error_information(payload); });
+    client.send_message("Hello", "from client");
 
     vector<string> args;
     return runMainWindow(client, args);
 }
+
+struct global
+{
+    global(void)
+    {
+        using namespace filesystem;
+
+        if (!exists("cpl-log"))
+            create_directory("cpl-log");
+        if (!exists("bin"))
+            create_directory("bin");
+        if (!exists("src"))
+            create_directory("src");
+        if (!exists("out"))
+            create_directory("out");
+
+        make_sure_log_file();
+        log_write_regular_information("Program Starts");
+    }
+
+    ~global(void)
+    {
+        close_log_file();
+    }
+} automatic;

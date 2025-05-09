@@ -28,13 +28,12 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets) # 查找 Qt6 库
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
 message(STATUS "Qt6 libraries found. Components: ${Qt6_FOUND_COMPONENTS}")
 
 add_executable(back.exe
     backend/main.cpp
     backend/compile-thread.cpp
-    backend/global-constant.cpp
     backend/write-log.cpp
 
     backend/network/class.TcpConnection.cpp
@@ -48,7 +47,6 @@ message(STATUS "Backend target 'back.exe' configured.")
 
 qt_add_executable(front.exe
     frontend/main.cpp
-    frontend/global-constant.cpp
     frontend/write-log.cpp
 
     frontend/network/class.ClientSocket.cpp

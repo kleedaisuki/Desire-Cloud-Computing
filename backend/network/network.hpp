@@ -546,7 +546,7 @@ namespace net
     class TcpConnection : public enable_shared_from_this<TcpConnection>
     {
     public:
-        using MessageCallback = function<string(const TcpConnectionPtr &, Buffer *)>;
+        using MessageCallback = function<tuple<unique_ptr<char[]>, size_t>(const TcpConnectionPtr &, Buffer *)>;
         using ConnectionCallback = function<void(const TcpConnectionPtr &)>;
         using WriteCompleteCallback = function<void(const TcpConnectionPtr &)>;
         using HighWaterMarkCallback = function<void(const TcpConnectionPtr &, size_t)>;
@@ -569,6 +569,7 @@ namespace net
         }
         void set_close_callback(CloseCallback cb) { close_cb_ = move(cb); }
 
+        void send(unique_ptr<char[]> message, size_t buflen);
         void send(string_view message);
         void send(Buffer *buf);
         void shutdown();
@@ -693,7 +694,7 @@ namespace net
         bool execute_legacy_handler_for_tag(const string &tag, const TcpConnectionPtr &conn, Buffer *buf);
         void execute_default_protocol_handler(const ProtocolHandler &handler, const TcpConnectionPtr &conn, Buffer *buf, const string &tag, size_t header_len, uint32_t payload_len);
         bool process_legacy_fallback(const TcpConnectionPtr &conn, Buffer *buf, size_t initial_readable);
-        string on_message(const TcpConnectionPtr &conn, Buffer *buf);
+        tuple<unique_ptr<char[]>, size_t> on_message(const TcpConnectionPtr &conn, Buffer *buf);
         void new_connection(int sockfd, const sockaddr_in &peer_addr);
         void remove_connection(const TcpConnectionPtr &conn);
         void remove_connection_in_loop(const TcpConnectionPtr &conn);

@@ -38,6 +38,4 @@ test-dir
 .vscode
 
 # Build
-frontend/build
-backend/build
 build

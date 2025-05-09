@@ -34,15 +34,40 @@ int main(int argc, char *argv[])
                                            string(peer_ip) + ":" + to_string(peer_port));
         } 
         else 
-            log_write_regular_information("Client disconnected: " + conn->name());
-        });
+            log_write_regular_information("Client disconnected: " + conn->name()); });
 
-    server.register_protocol_handler("compile-execute", [](const TcpConnectionPtr &conn, 
-        const string &tag, string_view payload) -> TcpServer::ProtocolHandlerPair
-    {
-        fstream source_code;
+    server.register_protocol_handler("compile-execute", [](const TcpConnectionPtr &conn, const string &tag, string_view payload) -> TcpServer::ProtocolHandlerPair {
+        return {"compile-execute", string(payload)};
     });
+
+    server.register_protocol_handler("Hello", [](const TcpConnectionPtr &conn, const string &tag, string_view payload) -> TcpServer::ProtocolHandlerPair
+                                     { return {"Hello", "Communication set up!"}; });
 
     server.start();
     loop.loop();
 }
+
+struct global
+{
+    global(void)
+    {
+        using namespace filesystem;
+
+        if (!exists("cpl-log"))
+            create_directory("cpl-log");
+        if (!exists("bin"))
+            create_directory("bin");
+        if (!exists("src"))
+            create_directory("src");
+        if (!exists("out"))
+            create_directory("out");
+
+        make_sure_log_file();
+        log_write_regular_information("Program Starts");
+    }
+
+    ~global(void)
+    {
+        close_log_file();
+    }
+} automatic;

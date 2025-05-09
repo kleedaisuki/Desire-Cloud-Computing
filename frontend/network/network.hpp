@@ -39,6 +39,7 @@
 #include <limits>
 #include <filesystem>
 #include <future>
+#include <list>
 
 #include <unistd.h>
 #include <sys/socket.h>
@@ -369,6 +370,7 @@ public:
     bool is_connected() const { return is_connected_.load(memory_order_relaxed); }
 
     bool send_message(const string &tag, string_view payload);
+    bool send_message(const string &tag, unique_ptr<char[]> buffer, size_t buflen);
     bool send_text(const string &tag, const string &text_payload);
     bool send_binary(const string &tag, const vector<char> &binary_payload);
     bool send_file(const string &tag, const string &file_path, size_t chunk_size = 64 * 1024);
@@ -418,18 +420,29 @@ private:
     {
     private:
         ClientSocket &owner_;
-        queue<vector<char>> send_queue_;
+        queue<tuple<unique_ptr<char[]>, size_t>> send_queue_;
         mutex send_mutex_;
         condition_variable send_cv_;
 
     public:
         explicit Sender(ClientSocket &owner) : owner_(owner) {}
 
-        void enqueue_message(vector<char> message)
+        // void enqueue_message(vector<char> message)
+        // {
+        //     unique_ptr<char[]> msg = make_unique<char[]>(message.size());
+        //     memcpy(msg.get(), message.data(), message.size());
+        //     {
+        //         lock_guard<mutex> lock(send_mutex_);
+        //         send_queue_.push({move(msg), message.size()});
+        //     }
+        //     send_cv_.notify_one();
+        // }
+
+        void enqueue_message(unique_ptr<char[]> message, size_t msglen)
         {
             {
                 lock_guard<mutex> lock(send_mutex_);
-                send_queue_.push(move(message));
+                send_queue_.push({move(message), msglen});
             }
             send_cv_.notify_one();
         }
@@ -437,7 +450,7 @@ private:
         void clear_queue()
         {
             lock_guard<mutex> lock(send_mutex_);
-            queue<vector<char>>{}.swap(send_queue_);
+            queue<tuple<unique_ptr<char[]>, size_t>>{}.swap(send_queue_);
         }
 
         void send_loop();

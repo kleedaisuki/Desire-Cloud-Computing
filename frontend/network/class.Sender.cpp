@@ -22,7 +22,7 @@ void ClientSocket::Sender::send_loop()
     log_write_regular_information("Send thread started.");
     while (!owner_.stop_requested_.load(memory_order_relaxed))
     {
-        vector<char> message_to_send;
+        tuple<unique_ptr<char[]>, size_t> message_to_send;
         {
             unique_lock<mutex> lock(send_mutex_);
             send_cv_.wait(lock, [this]
@@ -35,7 +35,7 @@ void ClientSocket::Sender::send_loop()
             send_queue_.pop();
         }
 
-        if (!send_all_internal(message_to_send.data(), message_to_send.size()))
+        if (auto &[msg, len] = message_to_send; !send_all_internal(msg.get(), len))
         {
             log_write_error_information("Send failed, likely disconnected. Stopping send loop.");
             owner_.trigger_error_callback_internal("Send operation failed.");

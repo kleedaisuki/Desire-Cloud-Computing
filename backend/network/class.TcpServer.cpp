@@ -150,7 +150,7 @@ void TcpServer::start()
     return message;
 }
 
-string TcpServer::on_message(const TcpConnectionPtr &conn, Buffer *buf)
+tuple<unique_ptr<char[]>, size_t> TcpServer::on_message(const TcpConnectionPtr &conn, Buffer *buf)
 {
     while (buf->readable_bytes() > 0)
     {
@@ -168,7 +168,7 @@ string TcpServer::on_message(const TcpConnectionPtr &conn, Buffer *buf)
             break;
         }
     }
-    return "";
+    return {nullptr, 0};
 }
 
 bool TcpServer::attempt_protocol_processing(const TcpConnectionPtr &conn, Buffer *buf)

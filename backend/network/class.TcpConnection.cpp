@@ -103,6 +103,23 @@ void TcpConnection::send(string_view message)
         log_write_warning_information("TcpConnection::send [" + name_ + "] - Connection disconnected, cannot send.");
 }
 
+void TcpConnection::send(unique_ptr<char[]> message, size_t buflen)
+{
+    if (state_ == State::kConnected)
+    {
+        if (loop_->is_in_loop_thread())
+            send_in_loop(message.get(), buflen);
+        else
+        {
+            shared_ptr<char[]> pass(move(message));
+            loop_->run_in_loop([ptr = shared_from_this(), msg = pass, buflen]()
+                               { ptr->send_in_loop(msg.get(), buflen); });
+        }
+    }
+    else
+        log_write_warning_information("TcpConnection::send [" + name_ + "] - Connection disconnected, cannot send.");
+}
+
 void TcpConnection::send(Buffer *buf)
 {
     if (state_ == State::kConnected)
@@ -247,11 +264,11 @@ void TcpConnection::handle_read()
             ThreadPool::instance().enqueue(
                 [this, self, buf_ptr = &input_buffer_]() -> void
                 {
-                    string response = message_cb_(self, buf_ptr);
+                    auto ret = message_cb_(self, buf_ptr);
                     try
                     {
-                        if (!response.empty())
-                            send(response);
+                        if (auto &[response, rlen] = ret; response != nullptr)
+                            send(move(response), rlen);
                     }
                     catch (const future_error &e)
                     {
