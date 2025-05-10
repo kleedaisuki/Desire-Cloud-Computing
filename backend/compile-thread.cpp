@@ -117,7 +117,6 @@ string compile_files(const vector<string> &instructions)
         pipe_write_end.reset();
 
         vector<const char *> argv;
-        argv.push_back("g++");
         for (const string &arg : instructions)
             argv.push_back(arg.c_str());
         argv.push_back(nullptr);

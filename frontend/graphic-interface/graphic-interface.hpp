@@ -31,6 +31,7 @@
 
 #include "../network/network.hpp"
 #include "../frontend-defs.hpp"
+#include "base.ActionTask.hpp"
 
 #include <QtConcurrent/QtConcurrent>
 #include <QFutureWatcher>
@@ -61,6 +62,8 @@
 #include <QMutex>
 #include <QVariant>
 #include <QHeaderView>
+#include <QMutexLocker>
+#include <QPointer>
 
 #include <map>
 #include <tuple>
@@ -79,6 +82,7 @@ inline const int FilePathRole = Qt::UserRole + 2;
 inline const int OriginalFileNameRole = Qt::UserRole + 3;
 inline const int ErrorMessageRole = Qt::UserRole + 4;
 
+class MainWindow;
 class TaskManager : public QObject
 {
     Q_OBJECT
@@ -88,11 +92,15 @@ public:
     void initiateSendFile(const QString &absoluteFilePath);
     void saveReceivedFile(const QString &originalFileName, const std::vector<char> &fileData);
 
+    QString getOutputDirectory() const { return outputDir_; }
+
 signals:
     void sendFileInitiationCompleted(QString filePath, bool success, QString errorReason);
     void receivedFileSaveCompleted(QString originalFileName, QString savedFilePath, bool success, QString errorReason);
 
 private:
+    friend class MainWindow;
+
     static std::tuple<QString, bool, QString> workerSendFileInitiation(ClientSocket *socket, QString filePath);
     static std::tuple<QString, QString, bool, QString> workerSaveReceivedFile(
         QString originalFileName, const std::vector<char> &fileDataVec, QString outputDir);
@@ -108,13 +116,22 @@ public:
     explicit MainWindow(ClientSocket &sock, QWidget *parent = nullptr);
     ~MainWindow() override;
 
+    bool isAFileSelected() const;
+    QString getSelectedFilePath() const;
+    TaskManager &getTaskManager() { return taskManager_; }
+    QListWidget *getTaskListWidget() { return taskListWidget_; }
+    map<QString, QListWidgetItem *> &getActiveSendTaskItems() { return activeSendTaskItems_; }
+    QMutex &getActiveSendTaskItemsMutex() { return activeSendTasksMutex_; }
+
+    void updateMainWindowUITaskItem(QListWidgetItem *item, UITaskStatus status, const QString &displayText, const QString &toolTipText = QString(), const QString &errorMsgForRole = QString());
+
 private slots:
     void onTreeViewClicked(const QModelIndex &index);
     void onListViewDoubleClicked(const QModelIndex &index);
     void onPathLineEditReturnPressed();
     void onGoUpActionTriggered();
     void onListViewSelectionChanged(const QItemSelection &selected, const QItemSelection &deselected);
-    void onSendActionTriggered();
+
     void onTaskListItemDoubleClicked(QListWidgetItem *item);
     void onClearTasksButtonClicked();
 
@@ -124,11 +141,14 @@ private slots:
     void handleNavigationFinished();
     void handleOpenFileFinished();
 
+    void executeActionTask();
+
 private:
     void setupUi();
     void connectSignalsAndSlots();
+    void createToolbarActions();
 
-    void handleServerFileResponse(const std::string &originalFileNameFromServer_std, const std::vector<char> &fileData, bool serverProcessingSuccess, const std::string &serverMessage_std);
+    void handleServerFileResponse(const string &originalFileNameFromServer_std, const vector<char> &fileData, bool serverProcessingSuccess, const string &serverMessage_std);
 
     void startNavigateToPath(const QString &path);
     void startOpenFile(const QString &filePath);
@@ -136,7 +156,7 @@ private:
     void updateUITaskItem(QListWidgetItem *item, UITaskStatus status, const QString &displayText, const QString &toolTipText = QString(), const QString &errorMsgForRole = QString());
     QListWidgetItem *findActiveSendingTaskByOriginalName(const QString &originalFileName);
 
-    static std::pair<bool, QString> performNavigationTask(QString path);
+    static pair<bool, QString> performNavigationTask(QString path);
 
     QFileSystemModel *fsTreeModel_ = nullptr;
     QFileSystemModel *fsListModel_ = nullptr;
@@ -144,19 +164,38 @@ private:
     QListView *fsList_ = nullptr;
     QLineEdit *pathEdit_ = nullptr;
     QListWidget *taskListWidget_ = nullptr;
+
     QAction *upAction_ = nullptr;
+
     QAction *sendAction_ = nullptr;
 
     ClientSocket &clientSocketInstance_;
-
-    const QString outputDirectory = "out";
+    QString outputDirectory_;
     TaskManager taskManager_;
 
-    std::map<QString, QListWidgetItem *> activeSendTaskItems_;
-    QMutex activeSendTasksMutex_;                      
+    map<QString, QListWidgetItem *> activeSendTaskItems_;
+    QMutex activeSendTasksMutex_;
 
-    QFutureWatcher<std::pair<bool, QString>> navigationWatcher_;
+    QFutureWatcher<pair<bool, QString>> navigationWatcher_;
     QFutureWatcher<bool> openFileWatcher_;
+
+    map<QAction *, unique_ptr<ActionTask>> toolbarActionTasks_;
+};
+
+class SendFileTask : public ActionTask
+{
+    Q_OBJECT
+
+public:
+    explicit SendFileTask(QObject *parent = nullptr);
+
+    void execute(MainWindow *mainWindowContext) override;
+
+    bool canExecute(MainWindow *mainWindowContext) const override;
+
+    QString actionText() const override;
+
+    QIcon actionIcon() const override;
 };
 
 int runMainWindow(ClientSocket &client, const vector<string> &args);

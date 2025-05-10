@@ -191,7 +191,7 @@ inline string formatLogMessage(const char *level, const string &information)
 
     ostringstream oss;
     oss << put_time(&prepared_time, "%Y-%m-%d %H:%M:%S");
-    oss << '.' << setfill('0') << setw(3) << ms.count();
+    oss << '.' << setfill('0') << setw(6) << ms.count();
     oss << ' ' << level;
     oss << information;
 
@@ -244,7 +244,7 @@ void log_write_error_information(const string &information)
     {
         try
         {
-            Logger::getInstance().enqueueLog(formatLogMessage("ERROR", information));
+            Logger::getInstance().enqueueLog(formatLogMessage("ERROR ", information));
         }
         catch (const runtime_error &e)
         {

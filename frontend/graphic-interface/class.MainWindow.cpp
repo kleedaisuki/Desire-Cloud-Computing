@@ -37,35 +37,26 @@ namespace
         std::vector<char> fileData;
         bool successfullyParsed = false;
         QString message;
-
         ParsedPayload() = default;
     };
-
     ParsedPayload parseEchoPayload(const std::string &payload_str)
     {
-        log_write_regular_information("[MainWindow::AnonParser] Attempting to parse echo payload. Raw Length: " + std::to_string(payload_str.length()));
-
         ParsedPayload result;
-
         size_t nullTerminatorPos = payload_str.find('\0');
-
         if (nullTerminatorPos == std::string::npos)
         {
             result.successfullyParsed = false;
             result.message = "Error: Malformed payload (filename null terminator not found).";
             return result;
         }
-
         std::string fileNameStdStr = payload_str.substr(0, nullTerminatorPos);
         result.originalFileName = QString::fromStdString(fileNameStdStr);
-
         if (payload_str.length() > nullTerminatorPos + 1)
         {
             const char *fileContentStart = payload_str.data() + nullTerminatorPos + 1;
             size_t fileContentLength = payload_str.length() - (nullTerminatorPos + 1);
             result.fileData.assign(fileContentStart, fileContentStart + fileContentLength);
         }
-
         result.successfullyParsed = true;
         if (result.fileData.empty() && payload_str.length() == nullTerminatorPos + 1)
         {
@@ -75,26 +66,49 @@ namespace
         {
             result.message = QString("Successfully parsed echo response for '%1'; file data received from server.").arg(result.originalFileName);
         }
-
         return result;
     }
-
 }
 
 MainWindow::MainWindow(ClientSocket &sock, QWidget *parent)
     : QMainWindow(parent),
       clientSocketInstance_(sock),
-      taskManager_(clientSocketInstance_, outputDirectory, this)
+
+      outputDirectory_(QDir(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation)).filePath("SimpleKCloudExecutor/ReceivedFiles")),
+      taskManager_(clientSocketInstance_, outputDirectory_, this)
 {
+
+    QDir dir(outputDirectory_);
+    if (!dir.exists())
+    {
+        log_write_regular_information("Output directory does not exist. Attempting to create: " + outputDirectory_.toStdString());
+        if (dir.mkpath("."))
+        {
+            log_write_regular_information("Successfully created output directory: " + outputDirectory_.toStdString());
+        }
+        else
+        {
+            log_write_error_information("CRITICAL: Failed to create output directory: " + outputDirectory_.toStdString() + ". Received files might not be saved correctly.");
+            QString fallbackDir = QDir(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)).filePath("SimpleKCloudExecutor_FallbackOutput");
+            log_write_warning_information("Attempting to use fallback output directory: " + fallbackDir.toStdString());
+            outputDirectory_ = fallbackDir;
+            QDir(outputDirectory_).mkpath(".");
+        }
+    }
+    else
+    {
+        log_write_regular_information("Output directory already exists: " + outputDirectory_.toStdString());
+    }
     setupUi();
     connectSignalsAndSlots();
-    log_write_regular_information("MainWindow initialized and UI built.");
+    log_write_regular_information("MainWindow initialized and UI built (Optimized).");
     startNavigateToPath(QDir::homePath());
 }
 
 MainWindow::~MainWindow()
 {
-    log_write_regular_information("MainWindow destructor called.");
+    log_write_regular_information("MainWindow destructor called (ActionTask refactor).");
+
     if (navigationWatcher_.isRunning())
     {
         log_write_regular_information("Cancelling active navigation task.");
@@ -137,25 +151,28 @@ void MainWindow::setupUi()
     fsList_->setWordWrap(true);
 
     pathEdit_ = new QLineEdit(this);
-    pathEdit_->setPlaceholderText("Enter path and press Enter");
+    pathEdit_->setPlaceholderText("输入路径并按回车 (Enter path and press Enter)");
 
-    QToolBar *mainToolBar = addToolBar("Main Toolbar");
-    upAction_ = mainToolBar->addAction(QIcon::fromTheme("go-up", QIcon(":/qt-project.org/styles/commonstyle/images/uparr-16.png")), "Go Up");
-    sendAction_ = mainToolBar->addAction(QIcon::fromTheme("document-send", QIcon(":/qt-project.org/styles/commonstyle/images/network-transmit-16.png")), "Send File");
-    sendAction_->setEnabled(false);
+    QToolBar *mainToolBar = addToolBar("主工具栏 (Main Toolbar)");
+    createToolbarActions();
+    if (upAction_)
+        mainToolBar->addAction(upAction_);
+    if (sendAction_)
+        mainToolBar->addAction(sendAction_);
 
     taskListWidget_ = new QListWidget(this);
     taskListWidget_->setAlternatingRowColors(true);
-    QPushButton *clearTasksButton = new QPushButton("Clear Finished/Error Tasks", this);
+    QPushButton *clearTasksButton = new QPushButton("清除已完成/错误任务 (Clear Finished/Error Tasks)", this);
 
     QWidget *taskAreaWidget = new QWidget(this);
     QVBoxLayout *taskLayout = new QVBoxLayout(taskAreaWidget);
-    taskLayout->addWidget(new QLabel("Network Tasks:", this));
+    taskLayout->addWidget(new QLabel("网络任务 (Network Tasks):", this));
     taskLayout->addWidget(taskListWidget_);
     QHBoxLayout *taskButtonLayout = new QHBoxLayout();
     taskButtonLayout->addStretch();
     taskButtonLayout->addWidget(clearTasksButton);
     taskLayout->addLayout(taskButtonLayout);
+    connect(clearTasksButton, &QPushButton::clicked, this, &MainWindow::onClearTasksButtonClicked);
 
     QSplitter *rightSplitter = new QSplitter(Qt::Vertical, this);
     rightSplitter->addWidget(fsList_);
@@ -175,10 +192,41 @@ void MainWindow::setupUi()
     mainLayout->addWidget(mainSplitter);
     setCentralWidget(centralWidget);
 
-    setWindowTitle(QString("Simple-K File Explorer & Cloud Executor - v%1").arg(APP_VERSION));
+    setWindowTitle(QString("Simple-K Executor - v%1").arg(APP_VERSION));
     resize(1200, 850);
+}
 
-    connect(clearTasksButton, &QPushButton::clicked, this, &MainWindow::onClearTasksButtonClicked);
+void MainWindow::createToolbarActions()
+{
+
+    upAction_ = new QAction(QIcon::fromTheme("go-up", QIcon(":/qt-project.org/styles/commonstyle/images/uparr-16.png")), "上一级 (Go Up)", this);
+
+    auto sendFileTask = std::make_unique<SendFileTask>(this);
+    sendAction_ = new QAction(sendFileTask->actionIcon(), sendFileTask->actionText(), this);
+    sendAction_->setEnabled(sendFileTask->canExecute(this));
+
+    ActionTask *sendFileTaskPtr = sendFileTask.get();
+    toolbarActionTasks_[sendAction_] = std::move(sendFileTask);
+
+    connect(sendAction_, &QAction::triggered, this, [this, sendFileTaskPtr]()
+            {
+        if (sendFileTaskPtr) { 
+            sendFileTaskPtr->execute(this);
+        } else {
+            log_write_error_information("Attempted to execute a null SendFileTask pointer!");
+        } });
+
+    /** (if you want to add new actions in the future, you can do it as following)
+     *
+     *  auto anotherTask = std::make_unique<YourNewTaskType>(this);
+     *  QAction* anotherAction = new QAction(anotherTask->actionIcon(), anotherTask->actionText(), this);
+     *  anotherAction->setEnabled(anotherTask->canExecute(this));
+     *  ActionTask* anotherTaskPtr = anotherTask.get();
+     *  toolbarActionTasks_[anotherAction] = std::move(anotherTask);
+     *  connect(anotherAction, &QAction::triggered, this, [this, anotherTaskPtr](){ ... });
+     *  mainToolBar->addAction(anotherAction);
+     */
+    log_write_regular_information("Toolbar actions created.");
 }
 
 void MainWindow::connectSignalsAndSlots()
@@ -187,9 +235,9 @@ void MainWindow::connectSignalsAndSlots()
     connect(fsTree_, &QTreeView::clicked, this, &MainWindow::onTreeViewClicked);
     connect(fsList_, &QListView::doubleClicked, this, &MainWindow::onListViewDoubleClicked);
     connect(pathEdit_, &QLineEdit::returnPressed, this, &MainWindow::onPathLineEditReturnPressed);
-    connect(upAction_, &QAction::triggered, this, &MainWindow::onGoUpActionTriggered);
+    if (upAction_)
+        connect(upAction_, &QAction::triggered, this, &MainWindow::onGoUpActionTriggered);
 
-    connect(sendAction_, &QAction::triggered, this, &MainWindow::onSendActionTriggered);
     connect(fsList_->selectionModel(), &QItemSelectionModel::selectionChanged, this, &MainWindow::onListViewSelectionChanged);
 
     connect(taskListWidget_, &QListWidget::itemDoubleClicked, this, &MainWindow::onTaskListItemDoubleClicked);
@@ -205,9 +253,7 @@ void MainWindow::connectSignalsAndSlots()
         [this](const std::string &payload_str)
         {
             log_write_regular_information("Socket Handler: Received 'compile-execute' message. Raw Length: " + std::to_string(payload_str.length()));
-
             ParsedPayload parsedResponse = parseEchoPayload(payload_str);
-
             if (parsedResponse.successfullyParsed)
             {
                 log_write_regular_information(QString("Socket Handler: Payload parsed successfully. FileName: '%1', DataSize: %2, Message: '%3'")
@@ -222,16 +268,8 @@ void MainWindow::connectSignalsAndSlots()
                                                 .arg(parsedResponse.message)
                                                 .toStdString());
             }
-
-            QMetaObject::invokeMethod(this, [this,
-
-                                             fileName = parsedResponse.originalFileName, data = parsedResponse.fileData, isParsedSuccessfully = parsedResponse.successfullyParsed, messageFromServer = parsedResponse.message]()
-                                      { handleServerFileResponse(
-                                            fileName.toStdString(),
-                                            data,
-                                            isParsedSuccessfully,
-                                            messageFromServer.toStdString()); },
-                                      Qt::QueuedConnection);
+            QMetaObject::invokeMethod(this, [this, fileName = parsedResponse.originalFileName, data = parsedResponse.fileData, isParsedSuccessfully = parsedResponse.successfullyParsed, messageFromServer = parsedResponse.message]()
+                                      { handleServerFileResponse(fileName.toStdString(), data, isParsedSuccessfully, messageFromServer.toStdString()); }, Qt::QueuedConnection);
         });
     log_write_regular_information("Registered 'compile-execute' handler with ClientSocket.");
 }
@@ -248,6 +286,51 @@ void MainWindow::onTreeViewClicked(const QModelIndex &index)
     }
     log_write_regular_information("Tree view clicked, navigating to: " + path.toStdString());
     startNavigateToPath(path);
+}
+
+void MainWindow::executeActionTask()
+{
+    QAction *action = qobject_cast<QAction *>(sender());
+    if (action)
+    {
+        auto it = toolbarActionTasks_.find(action);
+        if (it != toolbarActionTasks_.end() && it->second)
+        {
+            log_write_regular_information("Executing task for action: " + action->text().toStdString());
+            it->second->execute(this);
+        }
+        else
+        {
+            log_write_warning_information("No ActionTask associated with triggered action: " + action->text().toStdString());
+        }
+    }
+}
+
+bool MainWindow::isAFileSelected() const
+{
+    if (!fsList_ || !fsList_->selectionModel())
+        return false;
+    const QModelIndexList indexes = fsList_->selectionModel()->selectedIndexes();
+
+    return (fsListModel_ && indexes.count() == 1 && fsListModel_->fileInfo(indexes.first()).isFile());
+}
+
+QString MainWindow::getSelectedFilePath() const
+{
+    if (!fsList_ || !fsList_->selectionModel() || !fsListModel_)
+        return QString();
+    const QModelIndexList indexes = fsList_->selectionModel()->selectedIndexes();
+    if (indexes.count() == 1 && fsListModel_->fileInfo(indexes.first()).isFile())
+    {
+        return fsListModel_->fileInfo(indexes.first()).absoluteFilePath();
+    }
+    return QString();
+}
+
+void MainWindow::updateMainWindowUITaskItem(QListWidgetItem *item, UITaskStatus status, const QString &displayText, const QString &toolTipText, const QString &errorMsgForRole)
+{
+
+    updateUITaskItem(item, status, displayText, toolTipText, errorMsgForRole);
 }
 
 void MainWindow::onListViewDoubleClicked(const QModelIndex &index)
@@ -302,45 +385,14 @@ void MainWindow::onGoUpActionTriggered()
 
 void MainWindow::onListViewSelectionChanged(const QItemSelection & /*selected*/, const QItemSelection & /*deselected*/)
 {
-    const QModelIndexList indexes = fsList_->selectionModel()->selectedIndexes();
-    bool canSend = (indexes.count() == 1 && fsListModel_->fileInfo(indexes.first()).isFile());
-    sendAction_->setEnabled(canSend);
-}
 
-void MainWindow::onSendActionTriggered()
-{
-    const QModelIndexList indexes = fsList_->selectionModel()->selectedIndexes();
-    if (indexes.isEmpty())
-        return;
-    QFileInfo fileInfo = fsListModel_->fileInfo(indexes.first());
-    if (!fileInfo.isFile())
-        return;
-
-    QString filePath = fileInfo.absoluteFilePath();
-    QString fileName = fileInfo.fileName();
-    log_write_regular_information("Send action triggered for: " + filePath.toStdString());
-
+    for (auto const &[action, task] : toolbarActionTasks_)
     {
-        QMutexLocker locker(&activeSendTasksMutex_);
-        if (activeSendTaskItems_.count(fileName))
+        if (action && task)
         {
-            QMessageBox::warning(this, "任务已存在 (Task Already Exists)", QString("文件 '%1' 的发送任务已经在进行中或等待服务器响应。(Task for file '%1' is already in progress or awaiting server response.)").arg(fileName));
-            log_write_warning_information("Send request for " + fileName.toStdString() + " aborted, task already exists in activeSendTaskItems_.");
-            return;
+            action->setEnabled(task->canExecute(this));
         }
     }
-
-    QListWidgetItem *newItem = new QListWidgetItem();
-    newItem->setData(OriginalFileNameRole, fileName);
-    newItem->setData(FilePathRole, filePath);
-    taskListWidget_->addItem(newItem);
-    updateUITaskItem(newItem, UITaskStatus::Preparing, QString("Preparing to send: %1").arg(fileName));
-
-    {
-        QMutexLocker locker(&activeSendTasksMutex_);
-        activeSendTaskItems_[fileName] = newItem;
-    }
-    taskManager_.initiateSendFile(filePath);
 }
 
 void MainWindow::onTaskListItemDoubleClicked(QListWidgetItem *item)
@@ -350,13 +402,7 @@ void MainWindow::onTaskListItemDoubleClicked(QListWidgetItem *item)
     UITaskStatus status = static_cast<UITaskStatus>(item->data(UITaskStatusRole).value<quint8>());
     QString filePath = item->data(FilePathRole).toString();
     QString originalFileName = item->data(OriginalFileNameRole).toString();
-
-    log_write_regular_information(QString("Task item double-clicked. OriginalFileName: %1, Status: %2, FilePath (local/saved): %3")
-                                      .arg(originalFileName)
-                                      .arg(static_cast<int>(status))
-                                      .arg(filePath)
-                                      .toStdString());
-
+    log_write_regular_information(QString("Task item double-clicked. OriginalFileName: %1, Status: %2, FilePath (local/saved): %3").arg(originalFileName).arg(static_cast<int>(status)).arg(filePath).toStdString());
     if (status == UITaskStatus::Completed)
     {
         if (filePath.isEmpty())
@@ -392,21 +438,7 @@ void MainWindow::onClearTasksButtonClicked()
             UITaskStatus status = static_cast<UITaskStatus>(item->data(UITaskStatusRole).value<quint8>());
             if (status == UITaskStatus::Completed || status == UITaskStatus::Error)
             {
-                QString originalFileName = item->data(OriginalFileNameRole).toString();
-                log_write_regular_information("Removing task item from list: " + item->text().toStdString());
                 delete taskListWidget_->takeItem(i);
-
-                if (!originalFileName.isEmpty())
-                {
-                    QMutexLocker locker(&activeSendTasksMutex_);
-
-                    auto it = activeSendTaskItems_.find(originalFileName);
-                    if (it != activeSendTaskItems_.end() && it->second == item)
-                    {
-                        log_write_warning_information("Found a completed/error task that was still in activeSendTaskItems_ (should have been removed earlier): " + originalFileName.toStdString() + ". Removing now.");
-                        activeSendTaskItems_.erase(it);
-                    }
-                }
             }
         }
     }
@@ -416,48 +448,35 @@ void MainWindow::onClearTasksButtonClicked()
 void MainWindow::onSendFileInitiationCompleted(QString filePath, bool success, QString errorReason)
 {
     QString fileName = QFileInfo(filePath).fileName();
-    log_write_regular_information(QString("Received sendFileInitiationCompleted for %1. Success: %2. Reason: %3")
-                                      .arg(fileName)
-                                      .arg(success)
-                                      .arg(errorReason)
-                                      .toStdString());
+    log_write_regular_information(QString("Received sendFileInitiationCompleted for %1. Success: %2. Reason: %3").arg(fileName).arg(success).arg(errorReason).toStdString());
     QListWidgetItem *taskItem = nullptr;
     {
         QMutexLocker locker(&activeSendTasksMutex_);
         auto it = activeSendTaskItems_.find(fileName);
         if (it != activeSendTaskItems_.end())
-        {
             taskItem = it->second;
-        }
     }
-
     if (!taskItem)
     {
         log_write_error_information("Could not find task item in activeSendTaskItems_ for initiated send: " + fileName.toStdString());
         return;
     }
-
     if (success)
     {
-        updateUITaskItem(taskItem, UITaskStatus::AwaitingServer,
-                         QString("Sent: %1 (Awaiting server...)").arg(fileName),
-                         QString("File '%1' sent, waiting for server confirmation.").arg(filePath));
+        updateUITaskItem(taskItem, UITaskStatus::AwaitingServer, QString("Sent: %1 (Awaiting server...)").arg(fileName), QString("File '%1' sent, waiting for server confirmation.").arg(filePath));
     }
     else
     {
-        updateUITaskItem(taskItem, UITaskStatus::Error,
-                         QString("Send Failed: %1").arg(fileName),
-                         QString("Failed to send file '%1'. Reason: %2").arg(filePath, errorReason),
-                         errorReason);
+        updateUITaskItem(taskItem, UITaskStatus::Error, QString("Send Failed: %1").arg(fileName), QString("Failed to send file '%1'. Reason: %2").arg(filePath, errorReason), errorReason);
         QMutexLocker locker(&activeSendTasksMutex_);
         activeSendTaskItems_.erase(fileName);
-        log_write_regular_information("Removed " + fileName.toStdString() + " from activeSendTaskItems_ due to send initiation failure.");
     }
 }
 
 void MainWindow::onReceivedFileSaveCompleted(QString originalFileName, QString savedFilePath, bool success, QString errorReason)
 {
-    log_write_regular_information(QString("Received receivedFileSaveCompleted for original '%1', saved as '%2'. Success: %3. Reason: %4")
+
+    log_write_regular_information(QString("MainWindow::onReceivedFileSaveCompleted (generic) for original '%1', saved as '%2'. Success: %3. Reason: %4")
                                       .arg(originalFileName)
                                       .arg(savedFilePath)
                                       .arg(success)
@@ -466,26 +485,22 @@ void MainWindow::onReceivedFileSaveCompleted(QString originalFileName, QString s
 
     QListWidgetItem *newItem = new QListWidgetItem();
     newItem->setData(OriginalFileNameRole, originalFileName);
+
     newItem->setData(FilePathRole, savedFilePath);
     taskListWidget_->addItem(newItem);
 
     if (success)
     {
         updateUITaskItem(newItem, UITaskStatus::Completed,
-                         QString("Received: %1 -> %2")
-                             .arg(originalFileName, QFileInfo(savedFilePath).fileName()),
-                         QString("File '%1' received from server and saved as '%2'.")
-                             .arg(originalFileName, savedFilePath));
+                         QString("已接收并保存 (Received & Saved): %1").arg(QFileInfo(savedFilePath).fileName()),
+                         QString("文件 '%1' (来自服务器) 已保存至 '%2'.").arg(originalFileName, savedFilePath));
     }
     else
     {
         updateUITaskItem(newItem, UITaskStatus::Error,
-                         QString("Save Failed: %1 (originally %2)")
-                             .arg(QFileInfo(savedFilePath).fileName().isEmpty() ? originalFileName : QFileInfo(savedFilePath).fileName(), originalFileName),
-                         QString("Failed to save received file (original: '%1'). Reason: %2")
-                             .arg(originalFileName, errorReason),
+                         QString("保存失败 (Save Failed): %1 (原名 %2)").arg(QFileInfo(savedFilePath).fileName().isEmpty() ? originalFileName : QFileInfo(savedFilePath).fileName(), originalFileName),
+                         QString("保存接收的文件 '%1' 失败. 原因: %2").arg(originalFileName, errorReason),
                          errorReason);
-        QMessageBox::warning(this, "接收保存失败", QString("保存服务器返回的文件 '%1' 失败。\n原因: %2").arg(originalFileName, errorReason));
     }
 }
 
@@ -497,22 +512,11 @@ void MainWindow::handleNavigationFinished()
     std::pair<bool, QString> result = navigationWatcher_.result();
     bool success = result.first;
     QString errorMsg = result.second;
-
-    log_write_regular_information(QString("Navigation to '%1' finished. Success: %2. Message: '%3'")
-                                      .arg(targetPath)
-                                      .arg(success)
-                                      .arg(errorMsg)
-                                      .toStdString());
-
+    log_write_regular_information(QString("Navigation to '%1' finished. Success: %2. Message: '%3'").arg(targetPath).arg(success).arg(errorMsg).toStdString());
     if (success)
     {
         QModelIndex listIdx = fsListModel_->setRootPath(targetPath);
-        if (!listIdx.isValid() || fsListModel_->filePath(listIdx) != QDir(targetPath).canonicalPath())
-        {
-            log_write_warning_information("ListViewModel setRootPath effective path mismatch for: " + targetPath.toStdString() + ". Expected: " + QDir(targetPath).canonicalPath().toStdString() + ", Got: " + fsListModel_->filePath(listIdx).toStdString());
-        }
         fsList_->setRootIndex(listIdx);
-
         QModelIndex treeIdx = fsTreeModel_->index(targetPath);
         if (treeIdx.isValid())
         {
@@ -520,15 +524,11 @@ void MainWindow::handleNavigationFinished()
             fsTree_->expand(treeIdx);
             fsTree_->scrollTo(treeIdx, QAbstractItemView::EnsureVisible);
         }
-        else
-        {
-            log_write_warning_information("Path not found in tree model after successful navigation: " + targetPath.toStdString());
-        }
         pathEdit_->setText(QDir::toNativeSeparators(targetPath));
-        QDir currentDir(targetPath);
-        upAction_->setEnabled(!currentDir.isRoot());
+        upAction_->setEnabled(!QDir(targetPath).isRoot());
         fsList_->clearSelection();
-        sendAction_->setEnabled(false);
+
+        onListViewSelectionChanged(QItemSelection(), QItemSelection());
     }
     else
     {
@@ -565,42 +565,96 @@ void MainWindow::handleServerFileResponse(const std::string &originalFileNameFro
                                       .arg(serverMessage)
                                       .toStdString());
 
-    QListWidgetItem *sendingItem = nullptr;
+    QListWidgetItem *sendingItemRawPtr = nullptr;
     {
         QMutexLocker locker(&activeSendTasksMutex_);
         auto it = activeSendTaskItems_.find(originalFileNameFromServer);
         if (it != activeSendTaskItems_.end())
         {
-            sendingItem = it->second;
-
-            if (!serverProcessingSuccess)
-            {
-
-                activeSendTaskItems_.erase(it);
-                log_write_warning_information("Removed " + originalFileNameFromServer.toStdString() + " from activeSendTaskItems_ due to payload parsing failure from server.");
-            }
-            else
-            {
-
-                activeSendTaskItems_.erase(it);
-                log_write_regular_information("Removed " + originalFileNameFromServer.toStdString() + " from activeSendTaskItems_ after successful payload parsing from server.");
-            }
+            sendingItemRawPtr = it->second;
+            activeSendTaskItems_.erase(it);
+            log_write_regular_information("Removed " + originalFileNameFromServer.toStdString() + " from activeSendTaskItems_ after server response.");
         }
     }
 
-    if (sendingItem)
+    if (sendingItemRawPtr)
     {
-        QString sendingItemOriginalPath = sendingItem->data(FilePathRole).toString();
+
+        QString sendingItemOriginalPath = sendingItemRawPtr->data(FilePathRole).toString();
         if (serverProcessingSuccess)
         {
-            updateUITaskItem(sendingItem, UITaskStatus::Completed,
-                             QString("Server Echo: %1. %2").arg(originalFileNameFromServer, serverMessage),
-                             QString("Original: %1. Server responded and payload parsed: %2").arg(sendingItemOriginalPath, serverMessage));
+            updateUITaskItem(sendingItemRawPtr, UITaskStatus::Completed,
+                             QString("服务器回显 (Server Echo): %1. %2").arg(originalFileNameFromServer, serverMessage),
+                             QString("原始文件 (Original): %1. 服务器已响应且 payload 解析成功 (Server responded and payload parsed): %2").arg(sendingItemOriginalPath, serverMessage));
 
             if (!fileData.empty())
             {
-                log_write_regular_information("Server echo payload parsed successfully and file data received for " + originalFileNameFromServer.toStdString() + ". Requesting TaskManager to save.");
-                taskManager_.saveReceivedFile(originalFileNameFromServer, fileData);
+                log_write_regular_information("Server echo payload parsed successfully and file data received for " + originalFileNameFromServer.toStdString() + ". Initiating save for echoed content.");
+
+                auto *saveWatcher = new QFutureWatcher<std::tuple<QString, QString, bool, QString>>(this);
+
+                QListWidgetItem *capturedItem = sendingItemRawPtr;
+
+                connect(saveWatcher, &QFutureWatcherBase::finished, this,
+                        [this, saveWatcher, capturedItem, originalFileNameFromServer]()
+                        {
+                            if (!saveWatcher)
+                                return;
+
+                            auto result = saveWatcher->result();
+                            QString savedOriginalName = std::get<0>(result);
+                            QString savedPath = std::get<1>(result);
+                            bool saveSuccess = std::get<2>(result);
+                            QString saveErrorMsg = std::get<3>(result);
+
+                            if (savedOriginalName == originalFileNameFromServer)
+                            {
+
+                                if (capturedItem)
+                                {
+
+                                    bool itemStillExistsInList = false;
+                                    if (taskListWidget_)
+                                    {
+                                        for (int i = 0; i < taskListWidget_->count(); ++i)
+                                        {
+                                            if (taskListWidget_->item(i) == capturedItem)
+                                            {
+                                                itemStillExistsInList = true;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    if (!itemStillExistsInList)
+                                    {
+                                        log_write_warning_information("Captured item for " + originalFileNameFromServer.toStdString() + " is no longer in the task list widget.");
+                                        saveWatcher->deleteLater();
+                                        return;
+                                    }
+
+                                    if (saveSuccess)
+                                    {
+                                        log_write_regular_information("Echoed content for " + originalFileNameFromServer.toStdString() + " successfully saved to: " + savedPath.toStdString());
+                                        capturedItem->setData(FilePathRole, savedPath);
+                                        capturedItem->setToolTip(capturedItem->toolTip() + QString("\n回显已保存至 (Echo saved to): %1").arg(savedPath));
+                                    }
+                                    else
+                                    {
+                                        log_write_error_information("Failed to save echoed content for " + originalFileNameFromServer.toStdString() + ": " + saveErrorMsg.toStdString());
+                                        capturedItem->setToolTip(capturedItem->toolTip() + QString("\n保存回显失败 (Failed to save echo): %1").arg(saveErrorMsg));
+                                        QMessageBox::warning(this, "回显保存失败 (Echo Save Failed)", QString("成功从服务器接收文件 '%1' 的回显，但在本地保存时失败：\n%2").arg(originalFileNameFromServer, saveErrorMsg));
+                                    }
+                                }
+                                else
+                                {
+                                    log_write_warning_information("Captured item pointer was null for " + originalFileNameFromServer.toStdString() + " when echo save finished. This is unexpected.");
+                                }
+                            }
+                            saveWatcher->deleteLater();
+                        });
+
+                QString echoSaveDir = taskManager_.getOutputDirectory();
+                saveWatcher->setFuture(QtConcurrent::run(&TaskManager::workerSaveReceivedFile, originalFileNameFromServer, fileData, echoSaveDir));
             }
             else
             {
@@ -609,9 +663,9 @@ void MainWindow::handleServerFileResponse(const std::string &originalFileNameFro
         }
         else
         {
-            updateUITaskItem(sendingItem, UITaskStatus::Error,
-                             QString("Payload Error from Server for %1: %2").arg(originalFileNameFromServer, serverMessage),
-                             QString("Original: %1. Error parsing server response: %2").arg(sendingItemOriginalPath, serverMessage),
+            updateUITaskItem(sendingItemRawPtr, UITaskStatus::Error,
+                             QString("服务器响应错误 (Server Response Error for %1): %2").arg(originalFileNameFromServer, serverMessage),
+                             QString("原始文件 (Original): %1. 解析服务器响应时出错 (Error parsing server response): %2").arg(sendingItemOriginalPath, serverMessage),
                              serverMessage);
         }
     }
@@ -624,7 +678,8 @@ void MainWindow::handleServerFileResponse(const std::string &originalFileNameFro
             if (!fileData.empty())
             {
                 log_write_regular_information("Attempting to save this unexpected (but parsed) file data from server for " + originalFileNameFromServer.toStdString());
-                taskManager_.saveReceivedFile(originalFileNameFromServer, fileData);
+                QString echoSaveDir = taskManager_.getOutputDirectory();
+                QtConcurrent::run(&TaskManager::workerSaveReceivedFile, originalFileNameFromServer, fileData, echoSaveDir);
             }
         }
         else if (!serverProcessingSuccess)
@@ -644,7 +699,6 @@ void MainWindow::startNavigateToPath(const QString &path)
     if (navigationWatcher_.isRunning())
     {
         log_write_warning_information("Navigate: Navigation task already running. Request for " + path.toStdString() + " ignored.");
-
         return;
     }
     log_write_regular_information("Navigate: Starting navigation to: " + path.toStdString());
@@ -655,21 +709,13 @@ void MainWindow::startNavigateToPath(const QString &path)
 
 std::pair<bool, QString> MainWindow::performNavigationTask(QString path)
 {
-    log_write_regular_information(("[Worker] Navigate: Validating path '" + path + "'").toStdString());
     QFileInfo pathInfo(path);
     if (!pathInfo.exists())
-    {
-        return {false, QString("Path does not exist or is inaccessible: %1").arg(path)};
-    }
+        return {false, QString("Path does not exist: %1").arg(path)};
     if (!pathInfo.isDir())
-    {
         return {false, QString("Path is not a directory: %1").arg(path)};
-    }
-
     if (!pathInfo.isReadable())
-    {
         return {false, QString("Path is not readable: %1").arg(path)};
-    }
     return {true, QString()};
 }
 
@@ -685,7 +731,6 @@ void MainWindow::startOpenFile(const QString &filePath)
         log_write_warning_information("OpenFile: Open file task already running. Request for " + filePath.toStdString() + " ignored.");
         return;
     }
-    log_write_regular_information("OpenFile: Starting to open: " + filePath.toStdString());
     openFileWatcher_.setProperty("filePath", filePath);
     QFuture<bool> future = QtConcurrent::run(&QDesktopServices::openUrl, QUrl::fromLocalFile(filePath));
     openFileWatcher_.setFuture(future);
@@ -700,8 +745,7 @@ void MainWindow::updateUITaskItem(QListWidgetItem *item, UITaskStatus status, co
     }
 
     QString statusPrefix;
-    QColor textColor = item->listWidget() ? item->listWidget()->palette().color(QPalette::WindowText) : Qt::black;
-
+    QColor textColor = Qt::black;
     switch (status)
     {
     case UITaskStatus::Preparing:
@@ -742,9 +786,5 @@ QListWidgetItem *MainWindow::findActiveSendingTaskByOriginalName(const QString &
 {
     QMutexLocker locker(&activeSendTasksMutex_);
     auto it = activeSendTaskItems_.find(originalFileName);
-    if (it != activeSendTaskItems_.end())
-    {
-        return it->second;
-    }
-    return nullptr;
+    return (it != activeSendTaskItems_.end()) ? it->second : nullptr;
 }

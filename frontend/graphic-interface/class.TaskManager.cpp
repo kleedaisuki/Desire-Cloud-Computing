@@ -32,10 +32,7 @@
 TaskManager::TaskManager(ClientSocket &sock, const QString &outDir, QObject *parent)
     : QObject(parent), socket_(sock), outputDir_(outDir)
 {
-    if (!QDir(outputDir_).exists() && !QDir().mkpath(outputDir_))
-    {
-        log_write_error_information("TaskManager: Failed to create output directory: " + outputDir_.toStdString());
-    }
+    log_write_regular_information("TaskManager initialized with output directory: " + outputDir_.toStdString());
 }
 
 void TaskManager::initiateSendFile(const QString &absoluteFilePath)
@@ -133,21 +130,36 @@ tuple<QString, bool, QString> TaskManager::workerSendFileInitiation(ClientSocket
     return {filePath, success, errorMsg};
 }
 
-tuple<QString, QString, bool, QString> TaskManager::workerSaveReceivedFile(
-    QString originalFileName, const vector<char> &fileDataVec, QString outputDir)
+std::tuple<QString, QString, bool, QString> TaskManager::workerSaveReceivedFile(
+    QString originalFileName, const std::vector<char> &fileDataVec, QString outputDir)
 {
-    QString timestamp = QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss_zzz");
-    QString baseName = QFileInfo(originalFileName).completeBaseName();
-    if (baseName.isEmpty())
-        baseName = "received_file";
-    QString suffix = QFileInfo(originalFileName).suffix();
-    QString savedFileName = QString("%1_%2%3%4").arg(baseName, timestamp, (suffix.isEmpty() ? "" : "."), suffix);
-    QString savePath = QDir(outputDir).filePath(savedFileName);
 
-    log_write_regular_information(("[Worker] TaskManager: Attempting to save '" + originalFileName + "' as '" + savePath + "'").toStdString());
+    time_t rawTime = std::time(nullptr);
+    QString timestampStr = QString::number(rawTime);
+    QString savedFileName = QString("%1.txt").arg(timestampStr);
+
+    QDir dir(outputDir);
+    if (!dir.exists())
+    {
+        log_write_warning_information("[Worker] TaskManager: Output directory " + outputDir.toStdString() + " does not exist. Attempting to create it for saving " + originalFileName.toStdString());
+        if (!dir.mkpath("."))
+        {
+            QString errorMsg = QString("CRITICAL: Failed to create output directory %1 for saving file %2.").arg(outputDir, originalFileName);
+            log_write_error_information("[Worker] TaskManager: " + errorMsg.toStdString());
+            return {originalFileName, QString(), false, errorMsg};
+        }
+    }
+    QString savePath = dir.filePath(savedFileName);
+
+    log_write_regular_information(("[Worker] TaskManager: Attempting to save (original: '" + originalFileName + "') as '" + savePath + "'").toStdString());
     bool success = false;
     QString errorMsg;
     QFile file(savePath);
+
+    if (fileDataVec.empty())
+    {
+        log_write_warning_information(("[Worker] TaskManager: Received file data is empty for " + originalFileName + ". Creating an empty file at " + savePath).toStdString());
+    }
 
     if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
     {
@@ -155,14 +167,18 @@ tuple<QString, QString, bool, QString> TaskManager::workerSaveReceivedFile(
     }
     else
     {
-        qint64 bytesWritten = file.write(fileDataVec.data(), static_cast<qint64>(fileDataVec.size()));
+        qint64 bytesWritten = 0;
+        if (!fileDataVec.empty())
+        {
+            bytesWritten = file.write(fileDataVec.data(), static_cast<qint64>(fileDataVec.size()));
+        }
 
         file.flush();
         file.close();
 
-        if (bytesWritten != static_cast<qint64>(fileDataVec.size()))
+        if (!fileDataVec.empty() && bytesWritten != static_cast<qint64>(fileDataVec.size()))
         {
-            errorMsg = QString("Failed to write all data to file: %1. Written: %2, Expected: %3. File error: %4")
+            errorMsg = QString("Failed to write all data to file: %1. Written: %2, Expected: %3. Last file error: %4")
                            .arg(savePath)
                            .arg(bytesWritten)
                            .arg(fileDataVec.size())
@@ -183,15 +199,18 @@ tuple<QString, QString, bool, QString> TaskManager::workerSaveReceivedFile(
             log_write_warning_information(("[Worker] TaskManager: Attempting to remove partially written or problematic file: '" + savePath + "'").toStdString());
             if (!QFile::remove(savePath))
             {
-                log_write_error_information(("[Worker] TaskManager: Failed to remove problematic file: '" + savePath + "'").toStdString());
+                log_write_error_information(("[Worker] TaskManager: Failed to remove problematic file: '" + savePath + "' after failed save attempt.").toStdString());
+                if (!errorMsg.isEmpty())
+                    errorMsg += " ";
+                errorMsg += "Additionally, failed to remove problematic temp file.";
             }
         }
     }
 
     if (!success)
-        log_write_error_information(("[Worker] TaskManager: Save failed for '" + originalFileName + "'. Reason: " + errorMsg).toStdString());
+        log_write_error_information(("[Worker] TaskManager: Save failed for (original: '" + originalFileName + "') as '" + savedFileName + "'. Reason: " + errorMsg).toStdString());
     else
-        log_write_regular_information(("[Worker] TaskManager: Successfully saved '" + originalFileName + "' as '" + savePath + "'").toStdString());
+        log_write_regular_information(("[Worker] TaskManager: Successfully saved (original: '" + originalFileName + "') as '" + savedFileName + "' at path '" + savePath + "'").toStdString());
 
     return {originalFileName, savePath, success, errorMsg};
 }

@@ -59,6 +59,8 @@ qt_add_executable(front.exe
     frontend/graphic-interface/class.TaskManager.cpp
     frontend/graphic-interface/class.MainWindow.cpp
     frontend/graphic-interface/graphic-interface.hpp
+    frontend/graphic-interface/class.SendFileTask.cpp
+    frontend/graphic-interface/base.ActionTask.hpp
 )
 
 target_link_libraries(front.exe PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Concurrent)

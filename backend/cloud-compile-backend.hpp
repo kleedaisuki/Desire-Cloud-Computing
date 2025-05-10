@@ -37,6 +37,9 @@ extern fstream log_file;
 extern bool main_thread_stop_flag;
 #endif
 
+string compile_files(const vector<string> &instructions);
+tuple<bool, string, string> execute_executable(const vector<string> &command_line, const string &input_filename);
+
 void make_sure_log_file(void) throws(runtime_error);
 void close_log_file(void) throws(runtime_error);
 
