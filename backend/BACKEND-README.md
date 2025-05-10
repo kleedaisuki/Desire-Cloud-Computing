@@ -18,6 +18,7 @@ Simple-K Cloud Executor 后端旨在提供一个稳定、高效的平台，允�
 
 ## 📁 项目结构与核心组件
 
+```
 backend/
 ├── main.cpp                     # 程序入口，初始化服务器并启动事件循环
 ├── compile-thread.cpp           # 包含编译和执行外部命令的核心逻辑
@@ -32,6 +33,7 @@ backend/
 │   └── class.Buffer.cpp         # Buffer 类的实现
 ├── cloud-compile-backend.hpp    # 项目主要的后端头文件，聚合了常用头文件和全局声明
 └── backend-defs.hpp             # 定义了项目中使用的一些常量和枚举
+```
 
 ### 1. `main.cpp` - 程序入口与服务引导
 

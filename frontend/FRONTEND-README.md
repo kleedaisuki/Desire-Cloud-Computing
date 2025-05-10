@@ -30,25 +30,27 @@ Simple-K Cloud Executor 前端是一个跨平台的客户端应用程序，它�
 
 ## 📁 项目结构与核心组件
 
+```
 frontend/
-├── graphic-interface/               # Qt 图形用户界面相关代码
+├── graphic-interface/               # Qt 图形用户界面相关代码 (GUI Layer)
 │   ├── base.ActionTask.hpp          # UI 操作任务抽象基类
 │   ├── MainWindow.cpp               # 主窗口 runMainWindow 入口及全局 QApplication 管理
 │   ├── class.MainWindow.cpp         # 主窗口 (QMainWindow) 逻辑实现
 │   ├── graphic-interface.hpp        # GUI 层主要头文件，聚合UI类声明
 │   ├── class.SendFileTask.cpp       # “发送文件”具体操作实现
 │   └── class.TaskManager.cpp        # 前端异步任务管理器 (文件发送、保存)
-├── network/                         # 网络通信层代码
+├── network/                         # 网络通信层代码 (Networking Layer)
 │   ├── class.ClientSocket.cpp       # TCP 客户端套接字核心实现
 │   ├── class.ConnectionManager.cpp  # (ClientSocket内部) 连接管理辅助
 │   ├── class.MessageHandler.cpp     # (ClientSocket内部) 接收消息分发处理
 │   ├── class.Receiver.cpp           # (ClientSocket内部) 套接字数据接收逻辑
 │   ├── class.Sender.cpp             # (ClientSocket内部) 套接字数据发送逻辑
 │   └── network.hpp                  # 网络层主要头文件 (含ClientSocket, ThreadPool, Buffer等声明)
-├── main.cpp                         # 应用程序主入口
-├── write-log.cpp                    # 异步日志记录功能实现
+├── main.cpp                         # 应用程序主入口 (main function)
+├── write-log.cpp                    # 异步日志记录功能实现 (Logging System)
 ├── cloud-compile-frontend.hpp       # 前端项目主要聚合头文件
 └── frontend-defs.hpp                # 全局定义 (宏、常量、应用版本等)
+```
 
 ### 1. `main.cpp` - 程序入口与全局初始化
 
@@ -195,67 +197,144 @@ frontend/
 
 #### 3.1. `ClientSocket` 类 (`class.ClientSocket.cpp`, `network.hpp`)
 
-* **作用**:
-  * 前端网络通信的核心，封装了与后端服务器进行TCP连接、数据收发和协议处理的全部逻辑。
-  * 目标是提供一个易于使用的接口，隐藏底层socket操作的复杂性。
-* **核心实现与原理**:
-  * **构造函数 `ClientSocket::ClientSocket(string server_ip, uint16_t server_port)`**:
-    * 保存服务器IP (`server_ip_`) 和端口 (`server_port_`)。
-    * 初始化套接字描述符 `sockfd_` 为 -1，连接状态 `is_connected_` 为 `false`，停止请求 `stop_requested_` 为 `true` (初始不启动IO线程)。
-    * 获取全局 `ThreadPool::instance()` 的引用 (`thread_pool_`)。
-    * 创建内部组件的 `unique_ptr`：`connection_manager_`, `sender_`, `receiver_`, `message_handler_`，并将自身 (`*this`) 传递给它们作为所有者引用。
-    * **首次连接尝试**: 调用 `connect()` 方法尝试在构造时建立连接。如果失败，会记录警告。
-  * **析构函数 `ClientSocket::~ClientSocket()`**: 调用 `disconnect()` 确保资源被正确释放。
-  * **连接管理 (`connect()`, `disconnect()`, `connect_internal()`, `disconnect_internal()`)**:
-    * `connect()` 和 `disconnect()` 是公开接口，它们内部使用 `connection_mutex_` (一个 `std::mutex`) 来确保连接和断开操作的线程安全，并分别调用 `connect_internal()` 和 `disconnect_internal()`。
-    * `connect_internal()`:
-      * 如果已连接，直接返回 `true`。
-      * 先调用 `disconnect_internal()` 清理任何现有状态。
-      * 调用 `connection_manager_->try_connect()` 尝试建立物理socket连接并设置为非阻塞。
-      * 如果 `try_connect()` 成功（返回有效的sockfd），则将 `sockfd_` 更新为新的描述符，`stop_requested_` 置为 `false`，`is_connected_` 置为 `true`。
-      * 关键步骤：调用 `start_io_threads()` 启动独立的发送 (`send_thread_`) 和接收 (`recv_thread_`) 线程。
-      * 如果IO线程启动失败，则回滚连接状态，关闭socket，并返回 `false`。
-      * 成功后，调用 `trigger_connection_callback_internal(true)` 通知上层连接已建立。
-    * `disconnect_internal()`:
-      * 设置 `stop_requested_` 为 `true`，这会作为信号让IO线程停止。
-      * 如果 `sender_` 存在，调用 `sender_->notify_sender()` 唤醒可能在等待的发送线程，使其能检查 `stop_requested_` 标志。
-      * 将 `sockfd_` 置为 -1，并调用 `connection_manager_->close_socket()` 关闭实际的socket描述符。
-      * 调用 `stop_and_join_io_threads()` 等待发送和接收线程安全退出。
-      * 清理 `sender_` 的发送队列和 `receiver_` 的接收缓冲区。
-      * 设置 `is_connected_` 为 `false`，并调用 `trigger_connection_callback_internal(false)`。
-  * **IO线程管理 (`start_io_threads()`, `stop_and_join_io_threads()`)**:
-    * `start_io_threads()`: 创建两个 `std::thread`：一个运行 `Sender::send_loop()`，另一个运行 `Receiver::recv_loop()`。
-    * `stop_and_join_io_threads()`: 确保两个IO线程都已结束 (通过 `join()`)。
-  * **消息发送 (`send_message`, `send_text`, `send_binary`, `send_file`)**:
-    * `send_message(tag, payload_view)` / `send_message(tag, buffer, buflen)` 是核心发送方法。
-    * 它们首先检查连接状态和 `sender_` 是否有效。
-    * **协议打包**: 构造一个符合 `[1B tag_len][tag][4B payload_len_net_order][payload]` 格式的字节流。
-      * `tag_len`: `tag`字符串的长度 (uint8_t)。
-      * `payload_len_net_order`: `payload` 的长度，转换为网络字节序 (`htonl`)。
-      * 数据被拷贝到一个 `unique_ptr<char[]>` 管理的缓冲区中。
-    * 调用 `sender_->enqueue_message(message_buffer, total_length)` 将打包好的消息放入发送队列。
-    * `send_text` 和 `send_binary` 是对 `send_message` 的简单封装。
-    * `send_file(tag, file_path, chunk_size)`:
-      * 读取本地文件。
-      * **特殊payload格式**: `[filename_string][\0][file_binary_data]`。文件名和文件内容被连接成一个单一的payload。
-      * 然后这个特殊payload再按照上述通用消息协议（带tag和长度头）进行打包发送。
-  * **消息接收与处理 (`register_handler`, `register_default_handler`, `MessageHandler::process_received_data`)**:
-    * `register_handler(tag, handler_func)` 和 `register_default_handler(handler_func)` 将回调函数注册到 `message_handler_` 组件中。
-    * 当 `Receiver::recv_loop` 收到数据并放入 `Buffer` 后，会调用 `MessageHandler::process_received_data(buffer)`。
-    * `MessageHandler::process_received_data` 循环尝试从 `Buffer` 中解析符合协议格式的完整消息帧。
-      * 如果解析成功，提取 `tag` 和 `payload`。
-      * 根据 `tag` 查找已注册的 `Handler`。如果找到，则通过 `thread_pool_.enqueue()` 将 `Handler` 的执行（以lambda形式包装，捕获payload）提交到线程池中异步执行。
-      * 如果未找到特定 `tag` 的处理器但有默认处理器，则使用默认处理器。
-      * 如果协议帧过大（超过 `Buffer::kMaxFrameSize`），会触发错误并请求断开连接。
-  * **回调通知 (`trigger_error_callback_internal`, `trigger_connection_callback_internal`)**:
-    * 当发生错误或连接状态改变时，这些内部方法会将用户注册的 `ErrorCallback` 或 `ConnectionCallback` 通过 `thread_pool_.enqueue()` 提交到线程池中执行，以通知上层。
-  * **内部组件**:
-    * `ConnectionManager`: 辅助类，`try_connect()` 负责实际的 `socket()`, `connect()` 系统调用，并设置socket为非阻塞。`close_socket()` 负责关闭socket。
-    * `Sender`: 包含一个发送队列 (`std::queue`) 和互斥锁/条件变量。`send_loop()` 在独立线程中运行，等待队列中有消息，然后循环调用 `send_all_internal` 将数据通过socket发送出去，直到发送完成或出错。`send_all_internal` 处理了 `send()` 可能的 `EAGAIN`/`EWOULDBLOCK` 情况（通过 `poll` 等待socket可写）。
-    * `Receiver`: `recv_loop()` 在独立线程中运行。它使用 `poll()` 等待socket可读或出错事件。当可读时，调用 `recv_buffer_.read_fd()` 从socket读取数据到内部的 `Buffer`。读取到数据后，调用 `MessageHandler` 处理。处理了连接关闭 (EOF) 和各种socket错误。
-    * `MessageHandler`: 见上文“消息接收与处理”。
+* **内部组件概览**: `ClientSocket` 的强大功能离不开其内部精心设计的辅助类。这些类各司其职，共同构成了健壮的网络通信基础：
+  * `ConnectionManager`: 负责物理连接的建立与socket管理。
+  * `Sender`: 管理消息的异步发送队列和实际的socket写操作。
+  * `Receiver`: 负责从socket异步读取数据并进行初步缓冲。
+  * `MessageHandler`: 解析接收到的数据帧，并将消息分派给注册的处理器。
+    下面将对这些内部组件进行更详细的阐述。
 
-#### 3.2. `ThreadPool` 类 (定义于 `network.hpp`)
+#### 3.2. `ConnectionManager` 类 (`class.ConnectionManager.cpp`, `network.hpp` 中声明为 `ClientSocket` 的私有内部类)
+
+* **作用**:
+  * 作为 `ClientSocket` 的一个私有辅助类，专门负责处理TCP连接的建立细节和底层socket的关闭。
+  * 它将平台相关的socket操作（如创建、连接、设置非阻塞、关闭）封装起来，使 `ClientSocket` 的主逻辑更清晰。
+* **核心实现与原理**:
+  * **持有者引用**: 构造时接收一个 `ClientSocket& owner_` 的引用，以便访问 `owner_` 的配置（如服务器IP和端口）和日志函数。
+  * **`try_connect(void)`**:
+        1. **创建套接字**: 调用 `::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0)` 创建一个TCP套接字。`SOCK_CLOEXEC` 确保在执行 `exec` 系列函数时此描述符被关闭，是一个良好的安全实践。
+        2. **服务器地址设置**: 填充 `sockaddr_in server_addr` 结构体，使用 `owner_.server_ip_` 和 `owner_.server_port_`。通过 `inet_pton()` 将点分十进制的IP地址转换为网络字节序的二进制形式。
+        3. **建立连接**: 调用 `::connect(temp_sockfd, ...)` 尝试与服务器建立连接。
+        4. **设置为非阻塞**: 如果连接成功，通过 `fcntl(temp_sockfd, F_GETFL, 0)` 获取当前套接字标志，然后通过 `fcntl(temp_sockfd, F_SETFL, flags | O_NONBLOCK)` 添加 `O_NONBLOCK` 标志，使后续的socket操作（如 `send`, `recv`）变为非阻塞。
+        5. **错误处理**: 在上述任何一步失败时（例如 `socket() < 0`, `inet_pton() <= 0`, `connect() < 0`, `fcntl()` 失败），都会记录错误日志，关闭已创建的套接字（如果存在），并返回 `-1` 表示连接失败。
+        6. 成功时返回创建并配置好的套接字文件描述符。
+  * **`close_socket(int &sockfd_ref)`**:
+    * 接受一个文件描述符的引用。
+    * 如果 `sockfd_ref` 不是 `-1`（表示是一个有效的、打开的套接字）：
+      * 调用 `shutdown(sockfd_ref, SHUT_RDWR)` 来优雅地关闭双向的连接，这会尝试发送FIN包。
+      * 调用 `close(sockfd_ref)` 彻底关闭文件描述符并释放相关资源。
+      * 将 `sockfd_ref` 重置为 `-1`，表示套接字已关闭。
+
+#### 3.3. `Sender` 类 (`class.Sender.cpp`, `network.hpp` 中声明为 `ClientSocket` 的私有内部类)
+
+* **作用**:
+  * 作为 `ClientSocket` 的发送逻辑核心，负责管理一个待发送消息的队列，并在一个独立的发送线程中异步地将这些消息写入TCP套接字。
+  * 实现了发送操作与主调用线程的解耦，防止 `send()` 操作阻塞上层逻辑。
+* **核心实现与原理**:
+  * **持有者引用**: 构造时接收 `ClientSocket& owner_`。
+  * **发送队列 (`send_queue_`)**: 一个 `std::queue<tuple<unique_ptr<char[]>, size_t>>`。每个元素是一个元组，包含一个指向消息数据缓冲区的 `unique_ptr<char[]>` (负责内存管理) 和消息的实际长度。
+  * **同步机制**:
+    * `send_mutex_ (std::mutex)`: 用于保护对 `send_queue_` 的并发访问。
+    * `send_cv_ (std::condition_variable)`: 用于在队列为空时阻塞发送线程，并在新消息入队或请求停止时唤醒它。
+  * **`enqueue_message(unique_ptr<char[]> message, size_t msglen)`**:
+    * 此方法由 `ClientSocket` 的 `send_message` 等接口调用。
+    * 使用 `std::lock_guard<std::mutex> lock(send_mutex_)` 获取互斥锁。
+    * 将 `std::move(message)` 和 `msglen` 放入 `send_queue_`。
+    * 释放锁。
+    * 调用 `send_cv_.notify_one()` 唤醒可能正在等待的 `send_loop()` 线程。
+  * **`clear_queue()`**: 在断开连接时调用，清空发送队列中所有未发送的消息。
+  * **`send_loop()` (运行在 `owner_.send_thread_` 中)**:
+        1. 进入一个循环，该循环会持续运行直到 `owner_.stop_requested_` (一个 `std::atomic<bool>`) 为 `true`。
+        2. **等待任务**: 使用 `std::unique_lock<std::mutex> lock(send_mutex_)` 获取锁，然后调用 `send_cv_.wait(lock, ...)`。等待条件是 `owner_.stop_requested_` 为 `true` **或者** `send_queue_` 非空。
+        3. **检查停止请求**: 被唤醒后，首先检查 `owner_.stop_requested_`。如果为 `true`，则跳出循环，线程结束。
+        4. **获取消息**: 从 `send_queue_` 中取出队首消息 (`send_queue_.front()`, `send_queue_.pop()`)。
+        5. 释放锁。
+        6. **发送数据**: 调用 `send_all_internal(msg_ptr, msg_len)` 将取出的消息数据发送出去。
+        7. **错误处理**: 如果 `send_all_internal` 返回 `false`（表示发送失败，通常意味着连接已断开），则记录错误，通过 `owner_.trigger_error_callback_internal()` 通知上层，并调用 `owner_.request_disconnect_async_internal()` 请求异步断开连接（这会设置 `stop_requested_` 并最终停止此循环），然后 `break` 退出循环。
+  * **`send_all_internal(const char *data, size_t len)` (private)**:
+    * 负责将指定长度 (`len`) 的数据 (`data`) 完全发送到 `owner_.sockfd_`。
+    * 使用一个 `while` 循环，只要 `total_sent < len` 且 `!owner_.stop_requested_` 就持续发送。
+    * **检查socket有效性**: 每次循环前检查 `current_sockfd` 是否为-1。
+    * **执行发送**: 调用 `::send(current_sockfd, data + total_sent, len - total_sent, MSG_NOSIGNAL)`。`MSG_NOSIGNAL` 防止在对方连接重置时产生 `SIGPIPE` 信号。
+    * **处理 `send()` 返回值**:
+      * `sent > 0`: 成功发送一部分或全部数据，更新 `total_sent`。
+      * `sent == 0`: 非典型情况，通常表示对方关闭连接（但 `recv` 更常用于检测这个），这里视为发送失败。
+      * `sent < 0`: 发生错误。
+        * **`EAGAIN` 或 `EWOULDBLOCK`**: 表示socket发送缓冲区已满，当前不可写。此时，使用 `poll()` (带超时) 等待 `current_sockfd` 变为可写 (`POLLOUT`)。如果 `poll` 超时或返回错误（非 `EINTR`），则视为发送失败。
+        * **`EINTR`**: 如果被信号中断且未请求停止，则继续尝试发送。
+        * **其他错误**: 记录错误，视为发送失败。
+    * 如果循环因 `owner_.stop_requested_` 而退出，或发生不可恢复的错误，函数返回 `false`。完全发送成功则返回 `true`。
+  * **`notify_sender()`**: `ClientSocket` 在请求断开时调用此方法，它简单地 `send_cv_.notify_one()` 来确保即使队列为空，`send_loop` 也能被唤醒并检查 `stop_requested_` 标志。
+
+#### 3.4. `Receiver` 类 (`class.Receiver.cpp`, `network.hpp` 中声明为 `ClientSocket` 的私有内部类)
+
+* **作用**:
+  * 作为 `ClientSocket` 的接收逻辑核心，在一个独立的接收线程中运行，负责从TCP套接字异步读取数据，并将数据存入一个内部的 `Buffer` 对象。
+  * 当读取到数据后，它会调用 `MessageHandler` 来处理这些数据。
+* **核心实现与原理**:
+  * **持有者引用**: 构造时接收 `ClientSocket& owner_`。
+  * **接收缓冲区 (`recv_buffer_`)**: 一个 `ClientSocket::Buffer` 实例，用于存储从socket读取的原始字节流。
+  * **`clear_buffer()`**: 在断开连接时调用，清空 `recv_buffer_` 中所有未处理的数据。
+  * **`recv_loop()` (运行在 `owner_.recv_thread_` 中)**:
+        1. 进入一个循环，持续运行直到 `owner_.stop_requested_` 为 `true`。
+        2. **获取当前socket**: `current_sockfd = owner_.sockfd_.load(std::memory_order_relaxed)`。如果为-1，则表示连接已关闭，循环终止。
+        3. **使用 `poll()` 进行I/O多路复用**:
+            *创建 `struct pollfd pfd`，设置 `pfd.fd = current_sockfd`，关注的事件为 `POLLIN | POLLPRI` (普通或优先数据可读)。
+            * 调用 `poll(&pfd, 1, poll_timeout_ms)` (超时时间如200ms)。这会阻塞线程，直到socket上有事件发生或超时。
+        4. **检查停止请求**: `poll` 返回后，再次检查 `owner_.stop_requested_`。
+        5. **处理 `poll()` 返回值**:
+            *`poll_ret < 0`: `poll` 失败。如果 `errno == EINTR` (被信号中断)，则继续循环。否则，记录错误，通过 `owner_.trigger_error_callback_internal()` 和 `owner_.request_disconnect_async_internal()` 处理，并 `break`。
+            * `poll_ret == 0`: 超时，表示在 `poll_timeout_ms` 期间没有事件发生。继续下一次循环。
+            *`poll_ret > 0`: 有事件发生。
+                * **错误事件检查**: 检查 `pfd.revents` 是否包含 `POLLERR | POLLHUP | POLLNVAL` (socket错误、挂断、无效请求)。如果是，记录详细错误（可能通过 `getsockopt(SO_ERROR)` 获取具体错误码），并同样触发错误回调和断开请求，然后 `break`。
+                ***可读事件处理**: 如果 `pfd.revents` 包含 `POLLIN | POLLPRI`，表示socket可读。
+                    * 调用 `recv_buffer_.read_fd(current_sockfd, &saved_errno)` 从socket读取数据到 `recv_buffer_`。
+                    ***处理 `read_fd()` 返回值 `n`**:
+                        * `n > 0`: 成功读取 `n` 字节数据。调用 `owner_.message_handler_->process_received_data(recv_buffer_)` 来尝试解析和处理刚接收到的数据。如果 `message_handler_` 为空，则记录错误。
+                        *`n == 0`: 表示对端关闭了连接 (EOF - End Of File)。记录此信息，调用 `owner_.request_disconnect_async_internal("Peer closed connection")`，并 `break`。
+                        * `n < 0`: 读取失败。如果 `saved_errno` 是 `EAGAIN`、`EWOULDBLOCK` 或 `EINTR`，则忽略并继续循环（尽管在阻塞 `poll` 之后 `EAGAIN`/`EWOULDBLOCK` 理论上不应立即发生，除非socket状态在 `poll` 和 `read` 之间改变了）。其他错误则记录，触发错误回调和断开请求，并 `break`。
+
+#### 3.5. `MessageHandler` 类 (`class.MessageHandler.cpp`, `network.hpp` 中声明为 `ClientSocket` 的私有内部类)
+
+* **作用**:
+  * 作为 `ClientSocket` 的消息分派中心，负责从 `Receiver` 提供的 `Buffer` 中解析出符合自定义应用层协议的消息帧，并根据消息的“标签”(tag) 将消息负载(payload)分派给上层（如 `ClientSocket` 的使用者）注册的相应处理器函数。
+* **核心实现与原理**:
+  * **持有者引用**: 构造时接收 `ClientSocket& owner_`。
+  * **处理器存储**:
+    * `handlers_ (std::unordered_map<string, Handler>)`: 存储特定标签字符串到其对应处理函数 (`Handler = function<void(const string &payload)>`) 的映射。
+    * `default_handler_ (Handler)`: 如果没有找到特定标签的处理器，则调用此默认处理器。
+    * `handler_rw_mutex_ (std::shared_mutex)`: 用于保护对 `handlers_` 和 `default_handler_` 的并发读写访问（读时共享，写时独占），确保注册和查找操作的线程安全。
+  * **`register_handler(const string &tag, Handler handler)`**:
+    * 获取 `std::unique_lock` 以独占访问 `handler_rw_mutex_`。
+    * 将 `tag` 和 `handler` 存入 `handlers_`。如果 `handler` 为空，则记录警告。
+  * **`register_default_handler(Handler handler)`**:
+    * 类似地，获取唯一锁并设置 `default_handler_`。
+  * **`process_received_data(Buffer &recv_buffer)`**:
+    * 此方法被 `Receiver::recv_loop()` 在接收到新数据后调用。
+    * **循环解析**: 进入一个 `while(true)` 循环，尝试从 `recv_buffer` 中解析尽可能多的完整消息帧。
+    * **协议帧格式**: `[1-byte tag_len][tag_string (tag_len bytes)][4-byte payload_len_network_order][payload_data (payload_len bytes)]`
+          1. **读取 `tag_len`**: 检查 `recv_buffer.readable_bytes()` 是否至少为1。如果是，通过 `*recv_buffer.peek()` 获取 `tag_len` (一个 `uint8_t`)。
+          2. **检查头部完整性**: 计算完整的头部长度 `header_len = 1 + tag_len + sizeof(uint32_t)`。检查 `recv_buffer.readable_bytes()` 是否小于 `header_len`。如果不足，表示当前数据不足以解析完整头部，`break` 退出循环，等待更多数据。
+          3. **读取 `payload_len`**: 从 `recv_buffer.peek() + 1 + tag_len` 位置拷贝4字节到 `uint32_t payload_len_net`，然后通过 `ntohl(payload_len_net)` 转换为主机字节序得到 `payload_len`。
+          4. **Payload大小检查**: 检查 `payload_len` 是否超过 `Buffer::kMaxFrameSize`。如果超过，这是一个严重的协议错误（可能导致分配过多内存），记录错误，调用 `owner_.trigger_error_callback_internal()` 和 `owner_.request_disconnect_async_internal()`，清空 `recv_buffer` 并 `return`（终止进一步处理）。
+          5. **检查消息完整性**: 计算总消息长度 `total_message_len = header_len + payload_len`。检查 `recv_buffer.readable_bytes()` 是否小于 `total_message_len`。如果不足，`break` 退出循环，等待更多数据。
+    * **提取消息并分派**: 如果上述检查都通过，表示 `recv_buffer` 中至少包含一个完整的消息帧。
+          1. **提取 `tag`**: `std::string tag(recv_buffer.peek() + 1, tag_len)`。
+          2. **消耗头部**: `recv_buffer.retrieve(header_len)`。
+          3. **提取 `payload`**: `std::string payload = recv_buffer.retrieve_as_string(payload_len)`。
+          4. **查找处理器**:
+              *获取 `std::shared_lock` 以共享访问 `handler_rw_mutex_`。
+              * 在 `handlers_` 中查找 `tag`。如果找到，`handler_to_call` 指向对应的 `Handler`。
+              *如果未找到，但 `default_handler_` 已设置，则 `handler_to_call` 指向 `default_handler_`。
+              * 释放共享锁。
+            5. **执行处理器**:
+              *如果找到了有效的 `handler_to_call`：
+                  * 通过 `owner_.thread_pool_.enqueue(0, [h = std::move(handler_to_call), p = std::move(payload), tag_copy = tag]() mutable { ... })` 将处理器的执行（包装在一个lambda中，捕获处理器、payload副本和tag副本）提交到 `ClientSocket` 的线程池中异步执行。这避免了消息处理逻辑阻塞接收线程。
+                  *Lambda内部包含 `try-catch`块，以捕获处理器执行时可能抛出的异常，并记录错误。
+              * 如果没有找到处理器（特定或默认的），则记录一条警告日志，指出该消息被丢弃。
+    * 循环继续，尝试从 `recv_buffer` 的剩余数据中解析下一个消息帧。
+
+#### 3.6. `ThreadPool` 类 (定义于 `network.hpp`)
 
 * **作用**:
   * 提供一个全局单例的、基于优先级的线程池，用于执行应用程序中的异步任务，特别是 `ClientSocket` 的消息处理回调和错误/连接状态回调。
@@ -290,7 +369,7 @@ frontend/
     * `seq_` (atomic<size_t>): 用于生成任务序列号。
     * `idle_threads_` (atomic<size_t>): 当前空闲的线程数。
 
-#### 3.3. `Buffer` 类 (定义于 `network.hpp`)
+#### 3.7. `Buffer` 类 (定义于 `network.hpp`)
 
 * **作用**:
   * 为 `ClientSocket` 提供一个灵活高效的网络接收缓冲区。
