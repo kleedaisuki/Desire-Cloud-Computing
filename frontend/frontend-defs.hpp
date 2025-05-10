@@ -35,4 +35,6 @@
 #define OUT_DIRECTORY "out"
 #define throws(error_name)
 
+#define APP_VERSION "1.0.0"
+
 #endif

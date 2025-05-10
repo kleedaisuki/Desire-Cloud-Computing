@@ -26,6 +26,6 @@
 void make_sure_log_file(void) throws(runtime_error);
 void close_log_file(void) throws(runtime_error);
 
-int runMainWindow(ClientSocket &clientSocket, const vector<string> &parameters);
+int runMainWindow(ClientSocket &client, const vector<string> &args);
 
 #endif

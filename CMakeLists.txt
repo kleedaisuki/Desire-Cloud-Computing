@@ -28,7 +28,7 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Concurrent)
 message(STATUS "Qt6 libraries found. Components: ${Qt6_FOUND_COMPONENTS}")
 
 add_executable(back.exe
@@ -55,10 +55,13 @@ qt_add_executable(front.exe
     frontend/network/class.Receiver.cpp
     frontend/network/class.Sender.cpp
 
-    frontend/MainWindow.cpp
+    frontend/graphic-interface/MainWindow.cpp
+    frontend/graphic-interface/class.TaskManager.cpp
+    frontend/graphic-interface/class.MainWindow.cpp
+    frontend/graphic-interface/graphic-interface.hpp
 )
 
-target_link_libraries(front.exe PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets)
+target_link_libraries(front.exe PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Concurrent)
 message(STATUS "Frontend target 'front.exe' configured and linked with Qt6 libraries.")
 
 message(STATUS "CMake configuration finished!")

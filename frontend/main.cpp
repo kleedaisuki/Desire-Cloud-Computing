@@ -23,10 +23,9 @@ int main(int argc, char *argv[])
                                     { log_write_warning_information("(client default handler) message received but no tag met: " + payload); });
 
     client.register_handler("Hello", [](const string &payload)
-                            { log_write_regular_information("received Hello: " + payload); });
+                            { log_write_regular_information("Client received Hello from server: " + payload); });
     client.register_handler("error-information", [](const string &payload)
-                            { log_write_error_information(payload); });
-    client.send_message("Hello", "from client");
+                            { log_write_error_information("Client received error-information from server: " + payload); });
 
     vector<string> args;
     return runMainWindow(client, args);

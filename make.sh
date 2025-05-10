@@ -4,9 +4,10 @@ cd build
 
 TIMESTAMP=$(date +'%Y%m%d-%H%M%S')
 LOG_FILE="compile-term-${TIMESTAMP}.log"
+CMAKE_PREFIX_PATH="~/Documents/QT/6.9.0/gcc_64"
 
 echo "--- CMake Configure Step ---" > "${LOG_FILE}"
-cmake .. -D CMAKE_BUILD_TYPE=Release >> "${LOG_FILE}" 2>&1
+cmake .. cmake -D CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH} -D CMAKE_BUILD_TYPE=Release >> "${LOG_FILE}" 2>&1
 
 if [ $? -ne 0 ]; then
     echo "CMake configure failed, check ${LOG_FILE}!"
