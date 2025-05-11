@@ -6,30 +6,30 @@
 
 ## 核心亮点 (Key Qualities & Highlights) 🌟
 
-* **现代化技术栈 (Modern Tech Stack)**: 全面拥抱 **C++20** [cite: 1] 标准，利用其最新特性提升代码质量和执行效率。前端界面采用 **Qt 6.9.0** [cite: 3] 构建，保证了美观性、响应速度和跨平台潜力。
+* **现代化技术栈**: 全面拥抱 **C++20** 标准，利用其最新特性提升代码质量和执行效率。前端界面采用 **Qt 6.9.0** 构建，保证了美观性、响应速度和跨平台潜力。
 * **高性能事件驱动后端 (High-Performance Event-Driven Backend)**: 后端服务器采用基于 `epoll` (Linux) 的事件循环，实现高并发I/O处理和非阻塞网络操作，确保在高负载下依然能快速响应。
   * *后端是真正的性能怪兽哦！💪*
 * **异步化与多线程 (Asynchronous & Multithreaded)**:
   * **后端**: 使用线程池异步处理耗时的业务逻辑（如编译、执行用户代码），避免阻塞核心事件循环，最大化吞吐量。
   * **前端**: 网络通信和部分文件操作采用异步设计，`ClientSocket` 通过独立线程处理收发，`TaskManager` 利用 `QtConcurrent` 处理后台任务，确保UI始终流畅不卡顿。
 * **安全稳健的通信 (Secure & Robust Communication)**: 前后端之间采用自定义的TCP应用层协议，通过明确的消息标签和长度定义，保证数据传输的完整性和可靠性。
-* **直观易用的前端 (Intuitive Frontend GUI)**: [cite: 4]
+* **直观易用的前端 (Intuitive Frontend GUI)**: 
   * 提供友好的图形用户界面，轻松浏览本地文件、选择任务并提交至云端。
   * 实时任务状态追踪，让用户对文件上传、服务器处理及结果下载了如指掌。
 * **高效的异步日志系统 (Efficient Asynchronous Logging)**: 前后端均配备了独立的异步日志系统，能够将详细的运行时信息、警告及错误记录到本地文件，极大地方便了问题排查和性能分析，同时对主程序性能影响降至最低。
 * **模块化与可扩展设计 (Modular & Extensible Design)**: 代码结构清晰，前后端均采用模块化设计，无论是网络层、UI层还是业务逻辑层，都易于理解、维护和扩展新功能。
-* **清晰的构建体系 (Clear Build System)**: 采用 **CMake (≥ 3.16)** [cite: 1]作为统一的构建系统管理工具，支持多种构建类型（Debug, Release, NativeOptimizationRelease [cite: 1]），并为开发者提供了便捷的编译脚本。
+* **清晰的构建体系 (Clear Build System)**: 采用 **CMake (≥ 3.16)** 作为统一的构建系统管理工具，支持多种构建类型（Debug, Release, NativeOptimizationRelease ），并为开发者提供了便捷的编译脚本。
 
 ## 快速上手 (Quick Start) 🛠️
 
-我们提供了便捷的 `bash` 脚本来帮助你快速编译整个 Simple-K Cloud Executor 项目（包括前端和后端）。
+提供了便捷的 `bash` 脚本来帮助你快速编译整个 Simple-K Cloud Executor 项目（包括前端和后端）!
 
 **环境要求 (Prerequisites):**
 
 * **C++20 兼容编译器**: 如 GCC (推荐版本 ≥ 10) 或 Clang (推荐版本 ≥ 10)。
-* **CMake**: 版本 ≥ 3.16 [cite: 1] (根据 `CMakeLists.txt` [cite: 1])。
-* **Qt**: 版本 **6.9.0** [cite: 3]。确保已正确安装，并且CMake能够找到它。脚本中默认的 `CMAKE_PREFIX_PATH` 指向 `~/Documents/QT/6.9.0/gcc_64`，请根据你的实际Qt安装路径进行调整。
-  * 前端依赖的 Qt 模块: `Core`, `Gui`, `Widgets`, `Concurrent` [cite: 3]。
+* **CMake**: 版本 ≥ 3.16 (根据 `CMakeLists.txt` )。
+* **Qt**: 版本 **6.9.0** 。确保已正确安装，并且CMake能够找到它。脚本中默认的 `CMAKE_PREFIX_PATH` 指向 `~/Documents/QT/6.9.0/gcc_64`，请根据你的实际Qt安装路径进行调整。
+  * 前端依赖的 Qt 模块: `Core`, `Gui`, `Widgets`, `Concurrent` 。
 * **Linux 环境**: 后端服务器使用了Linux特有的API (如 `epoll`)。前端因直接使用POSIX socket API也推荐在Linux或类Unix环境编译运行，或确保有相应的兼容层。
 
 **编译步骤 (Build Steps):**
@@ -37,7 +37,7 @@
 1. **克隆项目 (Clone the Repository)**:
 
     ```bash
-    git clone <你的仓库URL> Simple-K-Cloud-Executor
+    git clone https://github.com/kleedaisuki/Desire-Cloud-Computing Simple-K-Cloud-Executor
     cd Simple-K-Cloud-Executor
     ```
 
@@ -73,7 +73,7 @@
 4. **运行程序 (Run the Applications)**:
     编译成功后，你会在 `build` 目录下找到两个主要的可执行文件：
     * `back.exe`: 后端服务器。
-    * `front.exe`: 前端图形界面客户端。 [cite: 4]
+    * `front.exe`: 前端图形界面客户端。 
 
     你需要先运行后端服务器，然后再启动前端客户端。
 
@@ -178,10 +178,9 @@
 
 ## 联络作者 (Contact) 💌
 
-| 角色 (Role) | 昵称/Handle (Nickname/Handle) | 邮箱 (Email)                     |
-| :---------- | :---------------------------- | :------------------------------- |
-| 作者 (Author) | **@kleedaisuki** | `kleedaisuki@outlook.com`        |
+Author: **@kleedaisuki**
+Email:  <kleedaisuki@outlook.com>
 
 ---
 
-祝你编码愉快，探索无限可能！ Happy Hacking! (づ｡◕‿‿◕｡)づ
+Happy Hacking! (づ｡◕‿‿◕｡)づ

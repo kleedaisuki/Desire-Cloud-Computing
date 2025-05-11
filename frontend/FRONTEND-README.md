@@ -461,7 +461,7 @@ frontend/
 
 ## 🚀 展望未来与可扩展点 (Future Enhancements & Extensibility)
 
-Simple-K Cloud Executor 的前端已经拥有了坚实的基础，但探索的旅程永无止境！以下是我们对前端未来发展的一些小憧憬和可以打磨得更闪亮的地方：
+Simple-K Cloud Executor 的前端已经拥有了坚实的基础，但探索的旅程永无止境！以下是对前端未来发展的一些小憧憬和可以打磨得更闪亮的地方：
 
 * **用户体验升级 (Enhanced User Experience) ✨**:
   * **记住我哦 (Session Persistence)**: 记住上次访问的路径、窗口大小和布局，每次打开都像回到家一样熟悉！
