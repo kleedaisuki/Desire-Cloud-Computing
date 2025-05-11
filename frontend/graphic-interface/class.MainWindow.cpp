@@ -60,11 +60,11 @@ namespace
         result.successfullyParsed = true;
         if (result.fileData.empty() && payload_str.length() == nullTerminatorPos + 1)
         {
-            result.message = QString("Successfully parsed echo response for '%1'; no file data returned by server.").arg(result.originalFileName);
+            result.message = QString("成功解析；服务器无返回内容");
         }
         else
         {
-            result.message = QString("Successfully parsed echo response for '%1'; file data received from server.").arg(result.originalFileName);
+            result.message = QString("成功解析");
         }
         return result;
     }
@@ -73,11 +73,9 @@ namespace
 MainWindow::MainWindow(ClientSocket &sock, QWidget *parent)
     : QMainWindow(parent),
       clientSocketInstance_(sock),
-
-      outputDirectory_(QDir(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation)).filePath("SimpleKCloudExecutor/ReceivedFiles")),
+      outputDirectory_(QDir(QCoreApplication::applicationDirPath()).filePath(OUT_DIRECTORY)),
       taskManager_(clientSocketInstance_, outputDirectory_, this)
 {
-
     QDir dir(outputDirectory_);
     if (!dir.exists())
     {
@@ -151,9 +149,9 @@ void MainWindow::setupUi()
     fsList_->setWordWrap(true);
 
     pathEdit_ = new QLineEdit(this);
-    pathEdit_->setPlaceholderText("输入路径并按回车 (Enter path and press Enter)");
+    pathEdit_->setPlaceholderText("输入路径并按回车");
 
-    QToolBar *mainToolBar = addToolBar("主工具栏 (Main Toolbar)");
+    QToolBar *mainToolBar = addToolBar("主工具栏");
     createToolbarActions();
     if (upAction_)
         mainToolBar->addAction(upAction_);
@@ -162,11 +160,11 @@ void MainWindow::setupUi()
 
     taskListWidget_ = new QListWidget(this);
     taskListWidget_->setAlternatingRowColors(true);
-    QPushButton *clearTasksButton = new QPushButton("清除已完成/错误任务 (Clear Finished/Error Tasks)", this);
+    QPushButton *clearTasksButton = new QPushButton("清除已完成/错误任务", this);
 
     QWidget *taskAreaWidget = new QWidget(this);
     QVBoxLayout *taskLayout = new QVBoxLayout(taskAreaWidget);
-    taskLayout->addWidget(new QLabel("网络任务 (Network Tasks):", this));
+    taskLayout->addWidget(new QLabel("网络任务:", this));
     taskLayout->addWidget(taskListWidget_);
     QHBoxLayout *taskButtonLayout = new QHBoxLayout();
     taskButtonLayout->addStretch();
@@ -256,10 +254,9 @@ void MainWindow::connectSignalsAndSlots()
             ParsedPayload parsedResponse = parseEchoPayload(payload_str);
             if (parsedResponse.successfullyParsed)
             {
-                log_write_regular_information(QString("Socket Handler: Payload parsed successfully. FileName: '%1', DataSize: %2, Message: '%3'")
+                log_write_regular_information(QString("Socket Handler: Payload parsed successfully. FileName: '%1', DataSize: %2")
                                                   .arg(parsedResponse.originalFileName)
                                                   .arg(parsedResponse.fileData.size())
-                                                  .arg(parsedResponse.message)
                                                   .toStdString());
             }
             else
@@ -368,7 +365,7 @@ void MainWindow::onGoUpActionTriggered()
     if (currentPath.isEmpty() || QDir(currentPath).isRoot())
     {
         log_write_regular_information("Cannot go up, already at root or path is invalid.");
-        QMessageBox::information(this, "提示", "已经是根目录啦！(Already at root directory!)");
+        QMessageBox::information(this, "提示", "已经是根目录啦！");
         return;
     }
     QDir dir(currentPath);
@@ -408,22 +405,22 @@ void MainWindow::onTaskListItemDoubleClicked(QListWidgetItem *item)
         if (filePath.isEmpty())
         {
             log_write_warning_information("Completed task item has no file path associated (FilePathRole).");
-            QMessageBox::information(this, "信息 (Information)", QString("任务 '%1' 已完成，但没有关联的本地文件路径可打开。(Task '%1' completed, but no associated local file path to open.)").arg(originalFileName));
+            QMessageBox::information(this, "信息", QString("任务 '%1' 已完成，但没有关联的本地文件路径可打开。(Task '%1' completed, but no associated local file path to open.)").arg(originalFileName));
             return;
         }
         if (!QDesktopServices::openUrl(QUrl::fromLocalFile(filePath)))
         {
-            QMessageBox::warning(this, "无法打开 (Cannot Open)", "无法使用默认程序打开文件 (Unable to open file with default application):\n" + filePath);
+            QMessageBox::warning(this, "无法打开", "无法使用默认程序打开文件:\n" + filePath);
         }
     }
     else if (status == UITaskStatus::Error)
     {
         QString errorMsg = item->data(ErrorMessageRole).toString();
-        QMessageBox::warning(this, "任务错误 (Task Error)", "此任务执行失败 (This task failed):\n" + (errorMsg.isEmpty() ? "未提供具体信息。(No specific information provided.)" : errorMsg));
+        QMessageBox::warning(this, "任务错误", "此任务执行失败\n" + (errorMsg.isEmpty() ? "未提供具体信息。" : errorMsg));
     }
     else
     {
-        QMessageBox::information(this, "任务进行中 (Task in Progress)", QString("任务 '%1' 仍在进行中... (Task '%1' is still in progress...)").arg(originalFileName));
+        QMessageBox::information(this, "任务进行中", QString("任务 '%1' 仍在进行中...").arg(originalFileName));
     }
 }
 
@@ -467,7 +464,7 @@ void MainWindow::onSendFileInitiationCompleted(QString filePath, bool success, Q
     }
     else
     {
-        updateUITaskItem(taskItem, UITaskStatus::Error, QString("Send Failed: %1").arg(fileName), QString("Failed to send file '%1'. Reason: %2").arg(filePath, errorReason), errorReason);
+        updateUITaskItem(taskItem, UITaskStatus::Error, QString("发送失败: %1").arg(fileName), QString("Failed to send file '%1'. Reason: %2").arg(filePath, errorReason), errorReason);
         QMutexLocker locker(&activeSendTasksMutex_);
         activeSendTaskItems_.erase(fileName);
     }
@@ -492,13 +489,13 @@ void MainWindow::onReceivedFileSaveCompleted(QString originalFileName, QString s
     if (success)
     {
         updateUITaskItem(newItem, UITaskStatus::Completed,
-                         QString("已接收并保存 (Received & Saved): %1").arg(QFileInfo(savedFilePath).fileName()),
+                         QString("已接收并保存: %1").arg(QFileInfo(savedFilePath).fileName()),
                          QString("文件 '%1' (来自服务器) 已保存至 '%2'.").arg(originalFileName, savedFilePath));
     }
     else
     {
         updateUITaskItem(newItem, UITaskStatus::Error,
-                         QString("保存失败 (Save Failed): %1 (原名 %2)").arg(QFileInfo(savedFilePath).fileName().isEmpty() ? originalFileName : QFileInfo(savedFilePath).fileName(), originalFileName),
+                         QString("保存失败: %1 (原名 %2)").arg(QFileInfo(savedFilePath).fileName().isEmpty() ? originalFileName : QFileInfo(savedFilePath).fileName(), originalFileName),
                          QString("保存接收的文件 '%1' 失败. 原因: %2").arg(originalFileName, errorReason),
                          errorReason);
     }
@@ -532,7 +529,7 @@ void MainWindow::handleNavigationFinished()
     }
     else
     {
-        QMessageBox::warning(this, "路径无效 (Invalid Path)", QString("无法导航到路径 (Cannot navigate to path)：%1\n%2").arg(targetPath, errorMsg));
+        QMessageBox::warning(this, "路径无效", QString("无法导航到路径：%1\n%2").arg(targetPath, errorMsg));
         pathEdit_->setText(QDir::toNativeSeparators(fsListModel_->rootPath()));
     }
 }
@@ -546,7 +543,7 @@ void MainWindow::handleOpenFileFinished()
     if (!success)
     {
         log_write_error_information("Failed to open file: " + filePath.toStdString());
-        QMessageBox::warning(this, "无法打开文件 (Cannot Open File)", "无法使用关联程序打开 (Unable to open with associated application):\n" + filePath);
+        QMessageBox::warning(this, "无法打开文件", "无法使用关联程序打开:\n" + filePath);
     }
     else
     {
@@ -559,10 +556,9 @@ void MainWindow::handleServerFileResponse(const std::string &originalFileNameFro
     QString originalFileNameFromServer = QString::fromStdString(originalFileNameFromServer_std);
     QString serverMessage = QString::fromStdString(serverMessage_std);
 
-    log_write_regular_information(QString("MainWindow::handleServerFileResponse (from socket) for '%1', payload parsed successfully: %2. Parser message: '%3'")
+    log_write_regular_information(QString("MainWindow::handleServerFileResponse (from socket) for '%1', payload parsed successfully: %2")
                                       .arg(originalFileNameFromServer)
                                       .arg(serverProcessingSuccess)
-                                      .arg(serverMessage)
                                       .toStdString());
 
     QListWidgetItem *sendingItemRawPtr = nullptr;
@@ -584,8 +580,8 @@ void MainWindow::handleServerFileResponse(const std::string &originalFileNameFro
         if (serverProcessingSuccess)
         {
             updateUITaskItem(sendingItemRawPtr, UITaskStatus::Completed,
-                             QString("服务器回显 (Server Echo): %1. %2").arg(originalFileNameFromServer, serverMessage),
-                             QString("原始文件 (Original): %1. 服务器已响应且 payload 解析成功 (Server responded and payload parsed): %2").arg(sendingItemOriginalPath, serverMessage));
+                             QString("服务器回复: %1. %2").arg(originalFileNameFromServer, serverMessage),
+                             QString("原始文件: %1. 服务器已响应且 payload 解析成功: %2").arg(sendingItemOriginalPath, serverMessage));
 
             if (!fileData.empty())
             {
@@ -636,13 +632,13 @@ void MainWindow::handleServerFileResponse(const std::string &originalFileNameFro
                                     {
                                         log_write_regular_information("Echoed content for " + originalFileNameFromServer.toStdString() + " successfully saved to: " + savedPath.toStdString());
                                         capturedItem->setData(FilePathRole, savedPath);
-                                        capturedItem->setToolTip(capturedItem->toolTip() + QString("\n回显已保存至 (Echo saved to): %1").arg(savedPath));
+                                        capturedItem->setToolTip(capturedItem->toolTip() + QString("\n回复已保存至: %1").arg(savedPath));
                                     }
                                     else
                                     {
                                         log_write_error_information("Failed to save echoed content for " + originalFileNameFromServer.toStdString() + ": " + saveErrorMsg.toStdString());
-                                        capturedItem->setToolTip(capturedItem->toolTip() + QString("\n保存回显失败 (Failed to save echo): %1").arg(saveErrorMsg));
-                                        QMessageBox::warning(this, "回显保存失败 (Echo Save Failed)", QString("成功从服务器接收文件 '%1' 的回显，但在本地保存时失败：\n%2").arg(originalFileNameFromServer, saveErrorMsg));
+                                        capturedItem->setToolTip(capturedItem->toolTip() + QString("\n保存回复失败: %1").arg(saveErrorMsg));
+                                        QMessageBox::warning(this, "回复保存失败", QString("成功从服务器接收文件 '%1' 的回复，但在本地保存时失败：\n%2").arg(originalFileNameFromServer, saveErrorMsg));
                                     }
                                 }
                                 else
@@ -664,8 +660,8 @@ void MainWindow::handleServerFileResponse(const std::string &originalFileNameFro
         else
         {
             updateUITaskItem(sendingItemRawPtr, UITaskStatus::Error,
-                             QString("服务器响应错误 (Server Response Error for %1): %2").arg(originalFileNameFromServer, serverMessage),
-                             QString("原始文件 (Original): %1. 解析服务器响应时出错 (Error parsing server response): %2").arg(sendingItemOriginalPath, serverMessage),
+                             QString("服务器响应错误: %2").arg(originalFileNameFromServer, serverMessage),
+                             QString("原始文件: %1. 解析服务器响应时出错: %2").arg(sendingItemOriginalPath, serverMessage),
                              serverMessage);
         }
     }

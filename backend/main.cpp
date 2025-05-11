@@ -111,13 +111,9 @@ int main(int argc, char *argv[])
 
                 string packaged_error_info = TcpServer::package_message("error-information", err_msg_content);
                 if (!packaged_error_info.empty())
-                {
                     conn->send(packaged_error_info);
-                }
                 else
-                {
                     log_write_error_information("compile-execute handler: Failed to package 'error-information' for client " + conn->name());
-                }
                 return {incoming_tag, string(payload)};
             }
 
@@ -131,13 +127,9 @@ int main(int argc, char *argv[])
 
                 string packaged_error_info = TcpServer::package_message("error-information", err_msg_content);
                 if (!packaged_error_info.empty())
-                {
                     conn->send(packaged_error_info);
-                }
                 else
-                {
                     log_write_error_information("compile-execute handler: Failed to package 'error-information' for client " + conn->name());
-                }
                 return {incoming_tag, string(payload)};
             }
 
@@ -180,7 +172,7 @@ int main(int argc, char *argv[])
                             conn->send(packaged_error_info);
                         else
                             log_write_error_information("compile-execute handler: Failed to package 'error-information' for client " + conn->name());
-                        return {incoming_tag, string(payload)};
+                        return {incoming_tag, move(packaged_error_info)};
                     }
                     src_file.write(file_content_sv.data(), file_content_sv.length());
                     if (src_file.fail())
@@ -194,17 +186,20 @@ int main(int argc, char *argv[])
                             conn->send(packaged_error_info);
                         else
                             log_write_error_information("compile-execute handler: Failed to package 'error-information' for client " + conn->name());
-                        return {incoming_tag, string(payload)};
+                        return {incoming_tag, move(packaged_error_info)};
                     }
                     src_file.close();
                     log_write_regular_information("Source file saved successfully: " + source_filepath.string());
                 }
 
                 vector<string> compile_instructions = {
-                    "g++", "-std=c++20", "-Wall", "-Wextra", "-pedantic",
+                    "g++", "-Wall", "-Wextra", "-pedantic",
                     source_filepath.string(),
                     "-o", output_executable_path.string()};
-                log_write_regular_information("Compiling: g++ -std=c++20 " + source_filepath.string() + " -o " + output_executable_path.string());
+                string compile_command;
+                for (string &str : compile_instructions)
+                    compile_command += str;
+                log_write_regular_information(move(compile_command));
                 string compile_stderr_output = compile_files(compile_instructions);
 
                 bool compilation_produced_executable = filesystem::exists(output_executable_path) &&
@@ -215,39 +210,50 @@ int main(int argc, char *argv[])
                     string errinfo_filename = new_source_filename_stem + ".errinfo";
                     filesystem::path errinfo_filepath = out_dir_path / errinfo_filename;
                     {
-                        ofstream err_info_file(errinfo_filepath, ios::binary | ios::trunc);
+                        ofstream err_info_file(errinfo_filepath, ios::binary | ios::ate);
                         if (err_info_file.is_open())
                         {
-                            err_info_file << compile_stderr_output;
+                            err_info_file << "--- compilation error information ---" << endl
+                                          << compile_stderr_output;
                             err_info_file.close();
                             log_write_regular_information("Compilation error info saved to: " + errinfo_filepath.string());
                         }
                         else
-                        {
                             log_write_error_information("Failed to write compilation error info to: " + errinfo_filepath.string() + ". Stderr was:\n" + compile_stderr_output);
-                        }
                     }
 
                     string error_for_client = compile_stderr_output;
                     if (error_for_client.empty())
-                    {
                         error_for_client = "Compilation failed to produce an executable, and no specific error message was captured from compiler stderr.";
-                    }
-                    log_write_error_information("compile-execute handler: Compilation failed for " + source_filepath.string() + ". Stderr/Info: " + error_for_client);
+                    log_write_warning_information("compile-execute handler: Compilation failed for " + source_filepath.string() + "; errinfo dumped: " + errinfo_filepath.string());
 
-                    string packaged_error_info = TcpServer::package_message("error-information", error_for_client);
+                    string packaged_error_info = TcpServer::package_message("error-information", "compile-execute handler: Compilation failed for " + original_filename_str);
                     if (!packaged_error_info.empty())
                         conn->send(packaged_error_info);
                     else
                         log_write_error_information("compile-execute handler: Failed to package 'error-information' for client " + conn->name());
-                    return {incoming_tag, string(payload)};
+                    return {incoming_tag,  original_filename_str + '\0' + "--- compilation error information ---\n" + string(error_for_client)};
                 }
 
                 if (!compile_stderr_output.empty())
                 {
-                    log_write_warning_information("Compilation for " + source_filepath.string() + " succeeded but produced stderr (e.g., warnings):\n" + compile_stderr_output);
+                    string errinfo_filename = new_source_filename_stem + ".errinfo";
+                    filesystem::path errinfo_filepath = out_dir_path / errinfo_filename;
+                    {
+                        ofstream err_info_file(errinfo_filepath, ios::binary | ios::ate);
+                        if (err_info_file.is_open())
+                        {
+                            err_info_file << "--- compilation error information ---" << endl
+                                          << compile_stderr_output;
+                            err_info_file.close();
+                            log_write_regular_information("Compilation error info saved to: " + errinfo_filepath.string());
+                        }
+                        else
+                            log_write_error_information("Failed to write compilation error info to: " + errinfo_filepath.string());
+                    }
+                    log_write_regular_information("Compilation for " + source_filepath.string() + " succeeded but produced stderr (e.g., warnings)");
                 }
-                log_write_regular_information("Compilation successful for " + source_filepath.string() + ". Executable: " + output_executable_path.string());
+                log_write_regular_information("Compilation successful for " + source_filepath.string() + " with executable: " + output_executable_path.string());
 
                 vector<string> exec_command = {output_executable_path.string()};
                 log_write_regular_information("Executing: " + output_executable_path.string());
@@ -257,17 +263,27 @@ int main(int argc, char *argv[])
                 if (exec_has_error)
                 {
                     exec_response_content_for_client = result_file1_str;
-                    log_write_error_information("compile-execute handler: Execution failed for " + output_executable_path.string() + ". Error: " + exec_response_content_for_client);
+                    log_write_error_information("compile-execute handler: Execution failed for " + output_executable_path.string() + "; error: " + exec_response_content_for_client);
 
                     string packaged_error_info = TcpServer::package_message("error-information", exec_response_content_for_client);
                     if (!packaged_error_info.empty())
                         conn->send(packaged_error_info);
                     else
                         log_write_error_information("compile-execute handler: Failed to package 'error-information' for client " + conn->name());
-                    return {incoming_tag, string(payload)};
+
+                    stringstream combined_content_ss;
+                    if (!compile_stderr_output.empty())
+                    {
+                        combined_content_ss << "--- compiler returned ---\n";
+                        combined_content_ss << compile_stderr_output << endl;
+                    }
+                    combined_content_ss << "--- execution error ---\n";
+                    combined_content_ss << exec_response_content_for_client;
+                    return {incoming_tag,  original_filename_str + '\0' + combined_content_ss.str()};
                 }
                 else
                 {
+                    log_write_regular_information("Receive .output & .err file for executable:" + result_file1_str + ", " + "result_file2_str");
                     filesystem::path exec_output_filepath(result_file1_str);
                     filesystem::path exec_error_filepath(result_file2_str);
 
@@ -278,14 +294,16 @@ int main(int argc, char *argv[])
                     bool error_read_error = error_content.rfind("Error: Could not open file", 0) == 0 || error_content.rfind("Error: Failed while reading file", 0) == 0 || error_content.rfind("Error: Could not determine size", 0) == 0 || error_content.rfind("Error: File too large", 0) == 0 || error_content.rfind("Error: Exception during assigning", 0) == 0;
 
                     if (output_read_error)
-                    {
                         log_write_error_information("Failed to read execution output file: " + exec_output_filepath.string() + ". Content/Error: " + output_content);
-                    }
                     if (error_read_error)
-                    {
                         log_write_error_information("Failed to read execution error file: " + exec_error_filepath.string() + ". Content/Error: " + error_content);
-                    }
+
                     stringstream combined_content_ss;
+                    if (!compile_stderr_output.empty())
+                    {
+                        combined_content_ss << "--- compiler returned ---\n";
+                        combined_content_ss << compile_stderr_output << endl;
+                    }
                     combined_content_ss << "--- stdout ---\n";
                     combined_content_ss << (output_read_error ? ("Failed to read " + exec_output_filepath.string() + ". See server logs for details.\n") : output_content);
                     combined_content_ss << "\n--- stderr ---\n";
@@ -369,8 +387,6 @@ struct global
         {
             if (!exists(LOG_DIRECTORY))
                 create_directory(LOG_DIRECTORY);
-            if (!exists("bin"))
-                create_directory("bin");
             if (!exists("src"))
                 create_directory("src");
             if (!exists(OUT_DIRECTORY))

@@ -301,7 +301,7 @@ void log_write_regular_information(string &&information)
     {
         try
         {
-            Logger::getInstance().enqueueLog(formatLogMessage("INFO ", information));
+            Logger::getInstance().enqueueLog(formatLogMessage("INFO  ", information));
         }
         catch (const runtime_error &e)
         {
@@ -339,7 +339,7 @@ void log_write_warning_information(string &&information)
     {
         try
         {
-            Logger::getInstance().enqueueLog(formatLogMessage("WARN ", information));
+            Logger::getInstance().enqueueLog(formatLogMessage("WARN  ", information));
         }
         catch (const runtime_error &e)
         {

@@ -70,7 +70,7 @@ frontend/
   * **作用**: 利用其构造和析构函数管理应用程序全局资源的生命周期，确保在程序启动时进行初始化，在程序退出时进行清理。这是一个典型的 RAII (Resource Acquisition Is Initialization) 应用。
   * **构造函数 `global::global()`**:
     * `make_sure_log_file()`: 调用 `write-log.cpp` 中的函数，确保日志系统（`Logger` 单例）被初始化。如果初始化失败，会打印错误到 `std::cerr` 并可能抛出异常。
-    * **目录创建**: 使用 `std::filesystem` API 检查并创建必要的运行时目录：`LOG_DIRECTORY` ("cpl-log"), "bin", "src", `OUT_DIRECTORY` ("out")。如果创建失败，会记录错误日志。
+    * **目录创建**: 使用 `std::filesystem` API 检查并创建必要的运行时目录：`LOG_DIRECTORY` ("cpl-log"), `OUT_DIRECTORY` ("out")。如果创建失败，会记录错误日志。
   * **析构函数 `global::~global()`**:
     * `log_write_regular_information(...)`: 记录程序即将退出的信息。
     * `close_log_file()`: 调用 `write-log.cpp` 中的函数，确保日志系统 `Logger` 将所有缓冲的日志条目刷新到磁盘，并为后续的正常关闭做准备 (实际文件关闭在 `Logger` 析构中)。
@@ -458,3 +458,27 @@ frontend/
 3. **构建系统**:
 4. **操作系统**: 由于使用了 Qt，理论上具有跨平台能力。但网络部分 (`ClientSocket`) 的底层实现基于 POSIX sockets (`<sys/socket.h>`, `<netinet/in.h>`, `<arpa/inet.h>`, `poll`, `fcntl` 等)，在 Windows 上可能需要额外处理或依赖 Qt 的网络抽象 (尽管看起来是直接用了POSIX API)。
 5. **后端服务器**: 需要 Simple-K Cloud Executor 后端服务器正在运行，并监听在可访问的IP和端口 (默认为 `127.0.0.1:3040`)。
+
+## 🚀 展望未来与可扩展点 (Future Enhancements & Extensibility)
+
+Simple-K Cloud Executor 的前端已经拥有了坚实的基础，但探索的旅程永无止境！以下是我们对前端未来发展的一些小憧憬和可以打磨得更闪亮的地方：
+
+* **用户体验升级 (Enhanced User Experience) ✨**:
+  * **记住我哦 (Session Persistence)**: 记住上次访问的路径、窗口大小和布局，每次打开都像回到家一样熟悉！
+  * **拖拽的魔法 (Drag & Drop Magic)**: 实现文件或文件夹的拖拽发送功能，操作更丝滑！
+  * **主题换肤乐 (Theming & Customization)**: 增加自定义主题或暗色模式支持，让界面更符合审美！
+  * **更友好的提示与反馈 (Improved Feedback & Guidance)**: 对各种操作结果和潜在错误提供更清晰、更可爱的用户提示和引导。
+
+* **功能拓展 (Feature Expansion) 🛠️**:
+  * **多服务器管理 (Multi-Server Management)**: 允许用户配置和切换多个后端服务器地址，轻松连接到不同的云端大脑！
+  * **批量操作优化 (Batch Operations)**: 优化对多个文件或任务的同时操作，例如批量发送、批量清除任务。
+  * **内置结果预览 (Basic Result Preview)**: 对于某些特定类型的结果文件（如文本、图片），提供一个简单的内置预览功能。
+  * **高级任务控制 (Advanced Task Control)**: 或许可以增加暂停、恢复或取消正在进行的网络任务的功能（需要后端协议支持）。
+
+* **连接与安全 (Connectivity & Security) 🛡️**:
+  * **加密通信通道 (Encrypted Communication)**: 若后端支持，前端可以升级为使用 TLS/SSL 加密与服务器的通信，保护数据传输的机密性。
+  * **连接状态指示器 (Enhanced Connectivity Status)**: 在UI上更明确地显示当前与服务器的连接状态和网络质量。
+
+* **性能与响应 (Performance & Responsiveness) ⚡**:
+  * 持续优化UI响应速度，特别是在处理大量文件列表或任务时。
+  * 进一步优化本地文件系统模型的加载和过滤效率。

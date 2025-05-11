@@ -61,7 +61,7 @@ int runMainWindow(ClientSocket &client, const vector<string> &args)
     if (app.applicationName().isEmpty())
         app.setApplicationName("Simple-K File Explorer");
     if (app.organizationName().isEmpty())
-        app.setOrganizationName("KleeWorks");
+        app.setOrganizationName("K-Works");
 
     MainWindow mainWindow(client);
     mainWindow.show();

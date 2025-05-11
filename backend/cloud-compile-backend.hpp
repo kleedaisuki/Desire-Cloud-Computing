@@ -28,15 +28,6 @@
 
 using namespace std;
 
-
-#ifndef _GLOBAL_CONSTANT_CPP
-extern ThreadPool global_thread_pool;
-extern unordered_map<string, function<ThreadStatCode(void *)>> main_thread_process;
-extern mutex log_mutex;
-extern fstream log_file;
-extern bool main_thread_stop_flag;
-#endif
-
 string compile_files(const vector<string> &instructions);
 tuple<bool, string, string> execute_executable(const vector<string> &command_line, const string &input_filename);
 

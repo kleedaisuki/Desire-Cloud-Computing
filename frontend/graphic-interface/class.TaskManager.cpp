@@ -39,11 +39,15 @@ void TaskManager::initiateSendFile(const QString &absoluteFilePath)
 {
     log_write_regular_information("TaskManager: Queuing send initiation for: " + absoluteFilePath.toStdString());
     auto *watcher = new QFutureWatcher<tuple<QString, bool, QString>>(this);
-    connect(watcher, &QFutureWatcherBase::finished, this, [this, watcher]()
+    connect(watcher,
+            &QFutureWatcherBase::finished,
+            this,
+            [this, watcher]()
             {
-        auto result = watcher->result();
-        emit sendFileInitiationCompleted(get<0>(result), get<1>(result), get<2>(result));
-        watcher->deleteLater(); });
+                auto result = watcher->result();
+                emit sendFileInitiationCompleted(get<0>(result), get<1>(result), get<2>(result));
+                watcher->deleteLater(); 
+            });
     watcher->setFuture(QtConcurrent::run(
         &TaskManager::workerSendFileInitiation, &socket_, absoluteFilePath));
 }
@@ -52,11 +56,15 @@ void TaskManager::saveReceivedFile(const QString &originalFileName, const vector
 {
     log_write_regular_information("TaskManager: Queuing save operation for received file (original name): " + originalFileName.toStdString());
     auto *watcher = new QFutureWatcher<tuple<QString, QString, bool, QString>>(this);
-    connect(watcher, &QFutureWatcherBase::finished, this, [this, watcher]()
+    connect(watcher,
+            &QFutureWatcherBase::finished,
+            this,
+            [this, watcher]()
             {
-        auto result = watcher->result();
-        emit receivedFileSaveCompleted(get<0>(result), get<1>(result), get<2>(result), get<3>(result));
-        watcher->deleteLater(); });
+                auto result = watcher->result();
+                emit receivedFileSaveCompleted(get<0>(result), get<1>(result), get<2>(result), get<3>(result));
+                watcher->deleteLater();
+            });
     watcher->setFuture(QtConcurrent::run(
         &TaskManager::workerSaveReceivedFile, originalFileName, fileData, outputDir_));
 }
@@ -130,11 +138,11 @@ tuple<QString, bool, QString> TaskManager::workerSendFileInitiation(ClientSocket
     return {filePath, success, errorMsg};
 }
 
-std::tuple<QString, QString, bool, QString> TaskManager::workerSaveReceivedFile(
-    QString originalFileName, const std::vector<char> &fileDataVec, QString outputDir)
+tuple<QString, QString, bool, QString> TaskManager::workerSaveReceivedFile(
+    QString originalFileName, const vector<char> &fileDataVec, QString outputDir)
 {
 
-    time_t rawTime = std::time(nullptr);
+    time_t rawTime = time(nullptr);
     QString timestampStr = QString::number(rawTime);
     QString savedFileName = QString("%1.txt").arg(timestampStr);
 

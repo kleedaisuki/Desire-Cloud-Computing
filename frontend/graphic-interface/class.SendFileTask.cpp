@@ -66,7 +66,7 @@ void SendFileTask::execute(MainWindow *mainWindowContext)
     if (!canExecute(mainWindowContext))
     {
         log_write_warning_information("[SendFileTask] execute called but canExecute is false. Aborting.");
-        QMessageBox::information(mainWindowContext, "提示 (Hint)", "请先选择一个文件才能发送哦！(Please select a file to send!)");
+        QMessageBox::information(mainWindowContext, "提示", "请先选择一个文件才能发送哦！");
         return;
     }
 
@@ -74,7 +74,7 @@ void SendFileTask::execute(MainWindow *mainWindowContext)
     if (filePath.isEmpty())
     {
         log_write_error_information("[SendFileTask] execute: Selected file path is empty, though canExecute was true. This is unexpected.");
-        QMessageBox::warning(mainWindowContext, "错误 (Error)", "未能获取选中的文件路径。(Failed to get selected file path.)");
+        QMessageBox::warning(mainWindowContext, "错误", "未能获取选中的文件路径。");
         return;
     }
 
@@ -86,8 +86,8 @@ void SendFileTask::execute(MainWindow *mainWindowContext)
         QMutexLocker locker(&mainWindowContext->getActiveSendTaskItemsMutex());
         if (mainWindowContext->getActiveSendTaskItems().count(fileName))
         {
-            QMessageBox::warning(mainWindowContext, "任务已存在 (Task Already Exists)",
-                                 QString("文件 '%1' 的发送任务已经在进行中或等待服务器响应。(Task for file '%1' is already in progress or awaiting server response.)").arg(fileName));
+            QMessageBox::warning(mainWindowContext, "任务已存在",
+                                 QString("文件 '%1' 的发送任务已经在进行中或等待服务器响应。").arg(fileName));
             log_write_warning_information("[SendFileTask] Send request for " + fileName.toStdString() + " aborted, task already exists.");
             return;
         }

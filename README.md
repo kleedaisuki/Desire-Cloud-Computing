@@ -59,7 +59,7 @@
         ./make.sh
         ```
 
-        此脚本会创建一个 `build` 目录，在其中进行CMake配置和编译，并将编译日志输出到 `build/compile-term-[时间戳].log` 文件中。
+        此脚本会创建一个 `build` 目录，在其中进行CMake配置和编译，并将编译日志输出到 `build/compilation-[时间戳].log` 文件中。
 
     * **Debug 构建 (For development and debugging):**
 
@@ -68,7 +68,7 @@
         ./dmake.sh
         ```
 
-        同样，编译日志会记录在 `build/compile-term-[时间戳].log`。
+        同样，编译日志会记录在 `build/compilation-[时间戳].log`。
 
 4. **运行程序 (Run the Applications)**:
     编译成功后，你会在 `build` 目录下找到两个主要的可执行文件：

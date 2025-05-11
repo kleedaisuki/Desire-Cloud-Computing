@@ -22,11 +22,18 @@ int main(int argc, char *argv[])
     client.register_default_handler([](const string &payload)
                                     { log_write_warning_information("(client default handler) message received but no tag met: " + payload); });
 
-    client.register_handler("Hello", [](const string &payload)
-                            { log_write_regular_information("Client received Hello from server: " + payload); });
-    client.register_handler("error-information", [](const string &payload)
-                            { log_write_error_information("Client received error-information from server: " + payload); });
-                            
+    client.register_handler(
+        "Hello",
+        [](const string &payload)
+        { log_write_regular_information("Client received Hello from server: " + payload); });
+    client.register_handler(
+        "error-information",
+        [](const string &payload)
+        { log_write_error_information("Client received error-information from server: " + payload); });
+
+
+    client.send_message("Hello", "Hello from client!");
+    
     vector<string> args;
     return runMainWindow(client, args);
 }
@@ -56,10 +63,6 @@ struct global
         {
             if (!exists(LOG_DIRECTORY))
                 create_directory(LOG_DIRECTORY);
-            if (!exists("bin"))
-                create_directory("bin");
-            if (!exists("src"))
-                create_directory("src");
             if (!exists(OUT_DIRECTORY))
                 create_directory(OUT_DIRECTORY);
         }

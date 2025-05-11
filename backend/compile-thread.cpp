@@ -145,7 +145,7 @@ string compile_files(const vector<string> &instructions)
         if (!error_output.empty())
         {
             // replace(error_output.begin(), error_output.end(), '\n', ' ');
-            log_write_error_information("Compiler stderr output captured");
+            log_write_warning_information("Compiler stderr output captured");
         }
 
         int child_status;
@@ -161,12 +161,12 @@ string compile_files(const vector<string> &instructions)
             int exit_code = WEXITSTATUS(child_status);
             if (exit_code == 0)
             {
-                log_write_error_information("Compilation successful for PID " + to_string(pid));
+                log_write_regular_information("Compilation successful for PID " + to_string(pid));
                 return error_output;
             }
             else
             {
-                log_write_error_information("Compilation failed or child exec failed (PID " + to_string(pid) + ") with exit code: " + to_string(exit_code));
+                log_write_warning_information("Compilation failed or child exec failed (PID " + to_string(pid) + ") with exit code: " + to_string(exit_code));
                 return error_output;
             }
         }

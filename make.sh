@@ -3,7 +3,7 @@ mkdir -p build
 cd build
 
 TIMESTAMP=$(date +'%Y%m%d-%H%M%S')
-LOG_FILE="compile-term-${TIMESTAMP}.log"
+LOG_FILE="compilation-${TIMESTAMP}.log"
 CMAKE_PREFIX_PATH="~/Documents/QT/6.9.0/gcc_64"
 
 echo "--- CMake Configure Step ---" > "${LOG_FILE}"
