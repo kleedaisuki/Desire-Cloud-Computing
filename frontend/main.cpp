@@ -46,6 +46,12 @@ struct global
 
         try
         {
+            if (!exists(LOG_DIRECTORY))
+                create_directory(LOG_DIRECTORY);
+            if (!exists("src"))
+                create_directory("src");
+            if (!exists(OUT_DIRECTORY))
+                create_directory(OUT_DIRECTORY);
             make_sure_log_file();
             log_write_regular_information("Program Starts. Directories checked/created. Logger initialized.");
         }
@@ -54,21 +60,14 @@ struct global
             cerr << "Runtime error during logger initialization: " << e.what() << endl;
             throw;
         }
+        catch (const filesystem::filesystem_error &e)
+        {
+            cerr << "Filesystem error during directory creation: " << e.what() << endl;
+            throw;
+        }
         catch (...)
         {
             cerr << "Unknown error during logger initialization." << endl;
-        }
-
-        try
-        {
-            if (!exists(LOG_DIRECTORY))
-                create_directory(LOG_DIRECTORY);
-            if (!exists(OUT_DIRECTORY))
-                create_directory(OUT_DIRECTORY);
-        }
-        catch (const filesystem::filesystem_error &e)
-        {
-            log_write_error_information("Filesystem error during directory creation: " + string(e.what()));
         }
     }
 

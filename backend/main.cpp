@@ -232,7 +232,7 @@ int main(int argc, char *argv[])
                         conn->send(packaged_error_info);
                     else
                         log_write_error_information("compile-execute handler: Failed to package 'error-information' for client " + conn->name());
-                    return {incoming_tag,  original_filename_str + '\0' + "--- compilation error information ---\n" + string(error_for_client)};
+                    return {incoming_tag, original_filename_str + '\0' + "--- compilation error information ---\n" + string(error_for_client)};
                 }
 
                 if (!compile_stderr_output.empty())
@@ -279,7 +279,7 @@ int main(int argc, char *argv[])
                     }
                     combined_content_ss << "--- execution error ---\n";
                     combined_content_ss << exec_response_content_for_client;
-                    return {incoming_tag,  original_filename_str + '\0' + combined_content_ss.str()};
+                    return {incoming_tag, original_filename_str + '\0' + combined_content_ss.str()};
                 }
                 else
                 {
@@ -370,6 +370,12 @@ struct global
 
         try
         {
+            if (!exists(LOG_DIRECTORY))
+                create_directory(LOG_DIRECTORY);
+            if (!exists("src"))
+                create_directory("src");
+            if (!exists(OUT_DIRECTORY))
+                create_directory(OUT_DIRECTORY);
             make_sure_log_file();
             log_write_regular_information("Program Starts. Directories checked/created. Logger initialized.");
         }
@@ -378,23 +384,14 @@ struct global
             cerr << "Runtime error during logger initialization: " << e.what() << endl;
             throw;
         }
+        catch (const filesystem::filesystem_error &e)
+        {
+            cerr << "Filesystem error during directory creation: " << e.what() << endl;
+            throw;
+        }
         catch (...)
         {
             cerr << "Unknown error during logger initialization." << endl;
-        }
-
-        try
-        {
-            if (!exists(LOG_DIRECTORY))
-                create_directory(LOG_DIRECTORY);
-            if (!exists("src"))
-                create_directory("src");
-            if (!exists(OUT_DIRECTORY))
-                create_directory(OUT_DIRECTORY);
-        }
-        catch (const filesystem::filesystem_error &e)
-        {
-            log_write_error_information("Filesystem error during directory creation: " + string(e.what()));
         }
     }
 
